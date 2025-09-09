@@ -133,6 +133,7 @@
                         <thead>
                             <tr>
                                 <th>序号</th>
+                                <th>邮件类型</th>
                                 <th>总包号</th>
                                 <th>始发局</th>
                                 <th>寄达局</th>
@@ -203,8 +204,18 @@
                 <form id="addMailDataForm">
                     <div class="form-row">
                         <div class="form-group">
+                            <label for="addMailClass">邮件类型 <span class="required">*</span></label>
+                            <select id="addMailClass" name="Mail_class" required>
+                                <option value="">请选择邮件类型</option>
+                                <option value="TY">TY</option>
+                                <option value="PY">PY</option>
+                            </select>
+                            <small class="form-text text-muted">只能选择TY或PY</small>
+                        </div>
+                        <div class="form-group">
                             <label for="addReceptacleNo">总包号 <span class="required">*</span></label>
-                            <input type="text" id="addReceptacleNo" name="mail_receptacleNo" required>
+                            <input type="text" id="addReceptacleNo" name="mail_receptacleNo" required maxlength="29" placeholder="前15位字母+后14位数字，共29位">
+                            <small class="form-text text-muted">格式：前15位字母+后14位数字，字母将自动转为大写</small>
                         </div>
                         <div class="form-group">
                             <label for="addOriginPost">始发局 <span class="required">*</span></label>
@@ -223,22 +234,22 @@
                     </div>
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="addRecTime">接收时间</label>
-                            <input type="datetime-local" id="addRecTime" name="mail_recTime">
+                            <label for="addRecTime">接收时间 <span class="required">*</span></label>
+                            <input type="datetime-local" id="addRecTime" name="mail_recTime" required>
                         </div>
                         <div class="form-group">
-                            <label for="addUpliftTime">启运时间</label>
-                            <input type="datetime-local" id="addUpliftTime" name="mail_upliftTime">
+                            <label for="addUpliftTime">启运时间 <span class="required">*</span></label>
+                            <input type="datetime-local" id="addUpliftTime" name="mail_upliftTime" required>
                         </div>
                     </div>
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="addArriveTime">到达时间</label>
-                            <input type="datetime-local" id="addArriveTime" name="mail_arriveTime">
+                            <label for="addArriveTime">到达时间 <span class="required">*</span></label>
+                            <input type="datetime-local" id="addArriveTime" name="mail_arriveTime" required>
                         </div>
                         <div class="form-group">
-                            <label for="addDeliverTime">交邮时间</label>
-                            <input type="datetime-local" id="addDeliverTime" name="mail_deliverTime">
+                            <label for="addDeliverTime">交邮时间 <span class="required">*</span></label>
+                            <input type="datetime-local" id="addDeliverTime" name="mail_deliverTime" required>
                         </div>
                     </div>
                     <div class="form-row">
@@ -292,8 +303,18 @@
                     <input type="hidden" id="editMailId" name="mail_id">
                     <div class="form-row">
                         <div class="form-group">
+                            <label for="editMailClass">邮件类型 <span class="required">*</span></label>
+                            <select id="editMailClass" name="Mail_class" required>
+                                <option value="">请选择邮件类型</option>
+                                <option value="TY">TY</option>
+                                <option value="PY">PY</option>
+                            </select>
+                            <small class="form-text text-muted">只能选择TY或PY</small>
+                        </div>
+                        <div class="form-group">
                             <label for="editReceptacleNo">总包号 <span class="required">*</span></label>
-                            <input type="text" id="editReceptacleNo" name="mail_receptacleNo" required>
+                            <input type="text" id="editReceptacleNo" name="mail_receptacleNo" required maxlength="29" placeholder="前15位字母+后14位数字，共29位">
+                            <small class="form-text text-muted">格式：前15位字母+后14位数字，字母将自动转为大写</small>
                         </div>
                         <div class="form-group">
                             <label for="editOriginPost">始发局 <span class="required">*</span></label>
@@ -312,22 +333,22 @@
                     </div>
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="editRecTime">接收时间</label>
-                            <input type="datetime-local" id="editRecTime" name="mail_recTime">
+                            <label for="editRecTime">接收时间 <span class="required">*</span></label>
+                            <input type="datetime-local" id="editRecTime" name="mail_recTime" required>
                         </div>
                         <div class="form-group">
-                            <label for="editUpliftTime">启运时间</label>
-                            <input type="datetime-local" id="editUpliftTime" name="mail_upliftTime">
+                            <label for="editUpliftTime">启运时间 <span class="required">*</span></label>
+                            <input type="datetime-local" id="editUpliftTime" name="mail_upliftTime" required>
                         </div>
                     </div>
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="editArriveTime">到达时间</label>
-                            <input type="datetime-local" id="editArriveTime" name="mail_arriveTime">
+                            <label for="editArriveTime">到达时间 <span class="required">*</span></label>
+                            <input type="datetime-local" id="editArriveTime" name="mail_arriveTime" required>
                         </div>
                         <div class="form-group">
-                            <label for="editDeliverTime">交邮时间</label>
-                            <input type="datetime-local" id="editDeliverTime" name="mail_deliverTime">
+                            <label for="editDeliverTime">交邮时间 <span class="required">*</span></label>
+                            <input type="datetime-local" id="editDeliverTime" name="mail_deliverTime" required>
                         </div>
                     </div>
                     <div class="form-row">
@@ -414,6 +435,8 @@
             checkMenuState();
             // 加载邮件数据
             loadMailData();
+            // 设置总包号实时验证
+            setupReceptacleNoValidation();
         });
 
         // 检查菜单状态
@@ -472,6 +495,7 @@
                 
                 row.innerHTML = `
                     <td>${serialNumber}</td>
+                    <td>${item.Mail_class || ''}</td>
                     <td>${item.mail_receptacleNo || ''}</td>
                     <td>${item.mail_originPost || ''}</td>
                     <td>${item.mail_destPost || ''}</td>
@@ -606,16 +630,197 @@
         }
 
         // 添加邮件数据
-        function addMailData() {
+        // 验证邮件类型格式（与账单信息管理相同）
+         function validateMailClass(mailClass) {
+             if (!mailClass) {
+                 return { isValid: false, message: '邮件类型不能为空' };
+             }
+             if (mailClass !== 'TY' && mailClass !== 'PY') {
+                 return { isValid: false, message: '邮件类型字段不符合要求' };
+             }
+             return { isValid: true, message: '' };
+         }
+
+        // 验证总包号格式
+        function validateReceptacleNo(receptacleNo) {
+            if (!receptacleNo) {
+                return { valid: false, message: '总包号不能为空' };
+            }
+            
+            if (receptacleNo.length !== 29) {
+                return { valid: false, message: '总包号长度必须为29位' };
+            }
+            
+            const letterPart = receptacleNo.substring(0, 15);
+            const numberPart = receptacleNo.substring(15);
+            
+            // 检查前15位是否为字母
+            if (!/^[A-Za-z]{15}$/.test(letterPart)) {
+                return { valid: false, message: '总包号前15位必须为字母' };
+            }
+            
+            // 检查后14位是否为数字
+            if (!/^\d{14}$/.test(numberPart)) {
+                return { valid: false, message: '总包号后14位必须为数字' };
+            }
+            
+            return { valid: true, message: '' };
+        }
+        
+        // 自动提取始发局和寄达局
+        function autoExtractPostOffices(receptacleNo, isEdit = false) {
+            if (receptacleNo && receptacleNo.length >= 12) {
+                const originPost = receptacleNo.substring(0, 6); // 第1-6位
+                const destPost = receptacleNo.substring(6, 12); // 第7-12位
+                
+                if (isEdit) {
+                    document.getElementById('editOriginPost').value = originPost;
+                    document.getElementById('editDestPost').value = destPost;
+                } else {
+                    document.getElementById('addOriginPost').value = originPost;
+                    document.getElementById('addDestPost').value = destPost;
+                }
+            }
+        }
+
+        // 验证到达地是否存在于bill_info表
+        async function validateDestination(destination) {
+            if (!destination || destination.trim() === '') {
+                return { isValid: false, message: '到达地不能为空' };
+            }
+            
+            try {
+                const response = await fetch('/api/validate_destination', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ destination: destination.trim() })
+                });
+                
+                const result = await response.json();
+                return { isValid: result.success, message: result.message };
+            } catch (error) {
+                return { isValid: false, message: '验证到达地时发生错误' };
+            }
+        }
+
+        // 时间格式转换函数：将datetime-local格式转换为YYYYMMDD格式
+        function convertDateTimeToYYYYMMDD(datetimeValue) {
+            if (!datetimeValue) {
+                return '';
+            }
+            
+            // datetime-local格式: 2025-09-09T05:00
+            const date = new Date(datetimeValue);
+            
+            if (isNaN(date.getTime())) {
+                return '';
+            }
+            
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            
+            return `${year}${month}${day}`;
+        }
+
+        // 将YYYYMMDD格式转换为datetime-local格式
+        function convertYYYYMMDDToDateTime(yyyymmdd) {
+            if (!yyyymmdd || yyyymmdd.length !== 8) {
+                return '';
+            }
+            
+            const year = yyyymmdd.substring(0, 4);
+            const month = yyyymmdd.substring(4, 6);
+            const day = yyyymmdd.substring(6, 8);
+            
+            // 返回格式: 2025-09-09T00:00
+            return `${year}-${month}-${day}T00:00`;
+        }
+
+        // 实时验证总包号输入并自动提取始发局和寄达局
+        function setupReceptacleNoValidation() {
+            const addInput = document.getElementById('addReceptacleNo');
+            const editInput = document.getElementById('editReceptacleNo');
+            
+            function validateInput(input, isEdit = false) {
+                const value = input.value;
+                const validation = validateReceptacleNo(value);
+                
+                // 移除之前的验证样式
+                input.classList.remove('is-valid', 'is-invalid');
+                
+                if (value.length === 0) {
+                    return; // 空值时不显示验证状态
+                }
+                
+                if (validation.isValid) {
+                    input.classList.add('is-valid');
+                    // 自动提取始发局和寄达局
+                    autoExtractPostOffices(value, isEdit);
+                } else {
+                    input.classList.add('is-invalid');
+                }
+            }
+            
+            if (addInput) {
+                addInput.addEventListener('input', function() {
+                    validateInput(this, false);
+                });
+            }
+            
+            if (editInput) {
+                editInput.addEventListener('input', function() {
+                    validateInput(this, true);
+                });
+            }
+        }
+
+        async function addMailData() {
             const form = document.getElementById('addMailDataForm');
             const formData = new FormData(form);
             const data = Object.fromEntries(formData.entries());
             
-            // 验证必填字段
-            if (!data.mail_receptacleNo || !data.mail_originPost || !data.mail_destPost || !data.mail_dest) {
+            // 验证必填字段（包括时间字段）
+            if (!data.Mail_class || !data.mail_receptacleNo || !data.mail_originPost || !data.mail_destPost || !data.mail_dest || 
+                !data.mail_recTime || !data.mail_upliftTime || !data.mail_arriveTime || !data.mail_deliverTime) {
                 showMessage('请填写所有必填字段', 'error');
                 return;
             }
+            
+            // 验证邮件类型格式
+            const mailClassValidation = validateMailClass(data.Mail_class);
+            if (!mailClassValidation.isValid) {
+                showMessage(mailClassValidation.message, 'error');
+                return;
+            }
+            
+            // 将邮件类型转换为大写
+            data.Mail_class = data.Mail_class.toUpperCase();
+            
+            // 验证总包号格式
+            const receptacleValidation = validateReceptacleNo(data.mail_receptacleNo);
+            if (!receptacleValidation.isValid) {
+                showMessage(receptacleValidation.message, 'error');
+                return;
+            }
+            
+            // 将总包号前15位转换为大写
+            data.mail_receptacleNo = data.mail_receptacleNo.substring(0, 15).toUpperCase() + data.mail_receptacleNo.substring(15);
+            
+            // 验证到达地是否存在
+            const destValidation = await validateDestination(data.mail_dest);
+            if (!destValidation.isValid) {
+                showMessage(destValidation.message, 'error');
+                return;
+            }
+            
+            // 转换时间格式为YYYYMMDD
+            data.mail_recTime = convertDateTimeToYYYYMMDD(data.mail_recTime);
+            data.mail_upliftTime = convertDateTimeToYYYYMMDD(data.mail_upliftTime);
+            data.mail_arriveTime = convertDateTimeToYYYYMMDD(data.mail_arriveTime);
+            data.mail_deliverTime = convertDateTimeToYYYYMMDD(data.mail_deliverTime);
             
             fetch('/api/mail_data', {
                 method: 'POST',
@@ -651,14 +856,15 @@
                         if (mailData) {
                             // 填充编辑表单
                             document.getElementById('editMailId').value = mailData.mail_id;
+                            document.getElementById('editMailClass').value = mailData.Mail_class || '';
                             document.getElementById('editReceptacleNo').value = mailData.mail_receptacleNo || '';
                             document.getElementById('editOriginPost').value = mailData.mail_originPost || '';
                             document.getElementById('editDestPost').value = mailData.mail_destPost || '';
                             document.getElementById('editDest').value = mailData.mail_dest || '';
-                            document.getElementById('editRecTime').value = formatDateTimeForInput(mailData.mail_recTime);
-                            document.getElementById('editUpliftTime').value = formatDateTimeForInput(mailData.mail_upliftTime);
-                            document.getElementById('editArriveTime').value = formatDateTimeForInput(mailData.mail_arriveTime);
-                            document.getElementById('editDeliverTime').value = formatDateTimeForInput(mailData.mail_deliverTime);
+                            document.getElementById('editRecTime').value = convertYYYYMMDDToDateTime(mailData.mail_recTime);
+                            document.getElementById('editUpliftTime').value = convertYYYYMMDDToDateTime(mailData.mail_upliftTime);
+                            document.getElementById('editArriveTime').value = convertYYYYMMDDToDateTime(mailData.mail_arriveTime);
+                            document.getElementById('editDeliverTime').value = convertYYYYMMDDToDateTime(mailData.mail_deliverTime);
                             document.getElementById('editRouteInfo').value = mailData.mail_routeInfo || '';
                             document.getElementById('editFlightInfo').value = mailData.mail_flightInfo || '';
                             document.getElementById('editWeight').value = mailData.mail_weight || '';
@@ -684,17 +890,51 @@
         }
 
         // 更新邮件数据
-        function updateMailData() {
+        async function updateMailData() {
             const form = document.getElementById('editMailDataForm');
             const formData = new FormData(form);
             const data = Object.fromEntries(formData.entries());
             const mailId = data.mail_id;
             
-            // 验证必填字段
-            if (!data.mail_receptacleNo || !data.mail_originPost || !data.mail_destPost || !data.mail_dest) {
+            // 验证必填字段（包括时间字段）
+            if (!data.Mail_class || !data.mail_receptacleNo || !data.mail_originPost || !data.mail_destPost || !data.mail_dest ||
+                !data.mail_recTime || !data.mail_upliftTime || !data.mail_arriveTime || !data.mail_deliverTime) {
                 showMessage('请填写所有必填字段', 'error');
                 return;
             }
+            
+            // 验证邮件类型格式
+            const mailClassValidation = validateMailClass(data.Mail_class);
+            if (!mailClassValidation.isValid) {
+                showMessage(mailClassValidation.message, 'error');
+                return;
+            }
+            
+            // 将邮件类型转换为大写
+            data.Mail_class = data.Mail_class.toUpperCase();
+            
+            // 验证总包号格式
+            const receptacleValidation = validateReceptacleNo(data.mail_receptacleNo);
+            if (!receptacleValidation.isValid) {
+                showMessage(receptacleValidation.message, 'error');
+                return;
+            }
+            
+            // 将总包号前15位转换为大写
+            data.mail_receptacleNo = data.mail_receptacleNo.substring(0, 15).toUpperCase() + data.mail_receptacleNo.substring(15);
+            
+            // 验证到达地是否存在
+            const destValidation = await validateDestination(data.mail_dest);
+            if (!destValidation.isValid) {
+                showMessage(destValidation.message, 'error');
+                return;
+            }
+            
+            // 转换时间格式为YYYYMMDD
+            data.mail_recTime = convertDateTimeToYYYYMMDD(data.mail_recTime);
+            data.mail_upliftTime = convertDateTimeToYYYYMMDD(data.mail_upliftTime);
+            data.mail_arriveTime = convertDateTimeToYYYYMMDD(data.mail_arriveTime);
+            data.mail_deliverTime = convertDateTimeToYYYYMMDD(data.mail_deliverTime);
             
             fetch(`/api/mail_data/${mailId}`, {
                 method: 'PUT',

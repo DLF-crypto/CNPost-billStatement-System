@@ -1604,6 +1604,68 @@ def get_mail_data():
             connection.close()
 
 # 添加邮件数据API
+# 验证邮件类型格式（与账单信息管理相同）
+def validate_mail_class_for_mail_data(mail_class):
+    if not mail_class:
+        return False, '邮件类型不能为空'
+    if mail_class not in ['TY', 'PY']:
+        return False, '邮件类型字段不符合要求'
+    return True, ''
+
+# 验证总包号格式
+def validate_receptacle_no(receptacle_no):
+    if not receptacle_no:
+        return False, '总包号不能为空'
+    
+    if len(receptacle_no) != 29:
+        return False, '总包号长度必须为29位'
+    
+    letter_part = receptacle_no[:15]
+    number_part = receptacle_no[15:]
+    
+    # 检查前15位是否为字母
+    if not letter_part.isalpha():
+        return False, '总包号前15位必须为字母'
+    
+    # 检查后14位是否为数字
+    if not number_part.isdigit():
+        return False, '总包号后14位必须为数字'
+    
+    return True, ''
+
+# 验证到达地是否存在于bill_info表的des字段
+@app.route('/api/validate_destination', methods=['POST'])
+def validate_destination():
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        data = request.get_json()
+        destination = data.get('destination', '').strip()
+        
+        if not destination:
+            return jsonify({'success': False, 'message': '到达地不能为空'})
+        
+        connection = get_db_connection()
+        cursor = connection.cursor()
+        
+        # 查询bill_info表中是否存在该到达地
+        cursor.execute("SELECT COUNT(*) FROM bill_info WHERE des = %s", (destination,))
+        count = cursor.fetchone()[0]
+        
+        if count > 0:
+            return jsonify({'success': True, 'message': '到达地验证通过'})
+        else:
+            return jsonify({'success': False, 'message': '不存在该到达地'})
+            
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'验证失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if 'connection' in locals() and connection:
+            connection.close()
+
 @app.route('/api/mail_data', methods=['POST'])
 def add_mail_data():
     if 'loggedin' not in session:
@@ -1612,19 +1674,38 @@ def add_mail_data():
     try:
         data = request.get_json()
         
+        # 验证邮件类型格式
+        mail_class = data.get('Mail_class', '').strip().upper()
+        is_valid, error_msg = validate_mail_class_for_mail_data(mail_class)
+        if not is_valid:
+            return jsonify({'success': False, 'message': error_msg})
+        
+        # 将邮件类型转换为大写
+        data['Mail_class'] = mail_class
+        
+        # 验证总包号格式
+        receptacle_no = data.get('mail_receptacleNo', '')
+        is_valid, error_msg = validate_receptacle_no(receptacle_no)
+        if not is_valid:
+            return jsonify({'success': False, 'message': error_msg})
+        
+        # 将总包号前15位转换为大写
+        data['mail_receptacleNo'] = receptacle_no[:15].upper() + receptacle_no[15:]
+        
         connection = get_db_connection()
         if connection:
             cursor = connection.cursor()
             
             insert_query = """
-                INSERT INTO mail_data (mail_receptacleNo, mail_originPost, mail_destPost, 
+                INSERT INTO mail_data (Mail_class, mail_receptacleNo, mail_originPost, mail_destPost, 
                                      mail_dest, mail_recTime, mail_upliftTime, mail_arriveTime, 
                                      mail_deliverTime, mail_routeInfo, mail_flightInfo, 
                                      mail_weight, mail_quote, mail_charge, mail_carrCode)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             
             cursor.execute(insert_query, (
+                data.get('Mail_class'),
                 data.get('mail_receptacleNo'),
                 data.get('mail_originPost'),
                 data.get('mail_destPost'),
@@ -1663,13 +1744,31 @@ def update_mail_data(mail_id):
     try:
         data = request.get_json()
         
+        # 验证邮件类型格式
+        mail_class = data.get('Mail_class', '').strip().upper()
+        is_valid, error_msg = validate_mail_class_for_mail_data(mail_class)
+        if not is_valid:
+            return jsonify({'success': False, 'message': error_msg})
+        
+        # 将邮件类型转换为大写
+        data['Mail_class'] = mail_class
+        
+        # 验证总包号格式
+        receptacle_no = data.get('mail_receptacleNo', '')
+        is_valid, error_msg = validate_receptacle_no(receptacle_no)
+        if not is_valid:
+            return jsonify({'success': False, 'message': error_msg})
+        
+        # 将总包号前15位转换为大写
+        data['mail_receptacleNo'] = receptacle_no[:15].upper() + receptacle_no[15:]
+        
         connection = get_db_connection()
         if connection:
             cursor = connection.cursor()
             
             update_query = """
                 UPDATE mail_data SET 
-                    mail_receptacleNo = %s, mail_originPost = %s, mail_destPost = %s,
+                    Mail_class = %s, mail_receptacleNo = %s, mail_originPost = %s, mail_destPost = %s,
                     mail_dest = %s, mail_recTime = %s, mail_upliftTime = %s,
                     mail_arriveTime = %s, mail_deliverTime = %s, mail_routeInfo = %s,
                     mail_flightInfo = %s, mail_weight = %s, mail_quote = %s,
@@ -1678,6 +1777,7 @@ def update_mail_data(mail_id):
             """
             
             cursor.execute(update_query, (
+                data.get('Mail_class'),
                 data.get('mail_receptacleNo'),
                 data.get('mail_originPost'),
                 data.get('mail_destPost'),
@@ -1808,6 +1908,7 @@ def init_bill_info_table():
             create_mail_data_table = """
             CREATE TABLE IF NOT EXISTS mail_data (
                 mail_id INT AUTO_INCREMENT PRIMARY KEY,
+                Mail_class VARCHAR(100) NOT NULL COMMENT '邮件类型',
                 mail_receptacleNo VARCHAR(100) NOT NULL COMMENT '总包号',
                 mail_originPost VARCHAR(200) NOT NULL COMMENT '始发局',
                 mail_destPost VARCHAR(200) NOT NULL COMMENT '寄达局',
