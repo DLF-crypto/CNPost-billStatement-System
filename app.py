@@ -27,6 +27,109 @@ if not os.path.exists(UPLOAD_FOLDER):
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+# 字段验证函数
+def validate_mail_class(mail_class):
+    """验证邮件类型"""
+    if not mail_class:
+        return False, "邮件类型不能为空"
+    if mail_class not in ['TY', 'PY']:
+        return False, "邮件类型字段不符合要求"
+    return True, ""
+
+def validate_destination(destination):
+    """验证目的地格式"""
+    if not destination:
+        return False, "目的地不能为空"
+    if not re.match(r'^[A-Z]{3}$', destination):
+        return False, "目的地字段不符合要求"
+    return True, ""
+
+def validate_quote(quote):
+    """验证报价格式"""
+    if quote is None or quote == '':
+        return False, "报价不能为空"
+    try:
+        quote_float = float(quote)
+        if quote_float < 0:
+            return False, "报价字段不符合要求"
+        # 检查小数位数是否超过2位
+        if len(str(quote_float).split('.')[-1]) > 2 and '.' in str(quote_float):
+            return False, "报价字段不符合要求"
+        return True, ""
+    except (ValueError, TypeError):
+        return False, "报价字段不符合要求"
+
+def check_destination_uniqueness(mail_class, destination, connection, exclude_id=None):
+    """检查目的地唯一性"""
+    try:
+        cursor = connection.cursor()
+        if exclude_id:
+            query = "SELECT COUNT(*) FROM bill_info WHERE mail_class = %s AND des = %s AND id != %s"
+            cursor.execute(query, (mail_class, destination, exclude_id))
+        else:
+            query = "SELECT COUNT(*) FROM bill_info WHERE mail_class = %s AND des = %s"
+            cursor.execute(query, (mail_class, destination))
+        
+        count = cursor.fetchone()[0]
+        cursor.close()
+        
+        if count > 0:
+            return False, "该目的地已有报价"
+        return True, ""
+    except Exception as e:
+        return False, f"验证失败: {str(e)}"
+
+def validate_bill_data(data, connection, exclude_id=None):
+    """验证账单数据"""
+    errors = []
+    
+    # 验证邮件类型
+    is_valid, error_msg = validate_mail_class(data.get('mail_class', ''))
+    if not is_valid:
+        errors.append(error_msg)
+    
+    # 验证目的地格式
+    is_valid, error_msg = validate_destination(data.get('des', ''))
+    if not is_valid:
+        errors.append(error_msg)
+    
+    # 验证报价
+    is_valid, error_msg = validate_quote(data.get('quote'))
+    if not is_valid:
+        errors.append(error_msg)
+    
+    # 验证路由信息（必填）
+    route_info = data.get('route_info', '').strip()
+    if not route_info:
+        errors.append('路由信息不能为空')
+    
+    # 验证航班号（必填）
+    flight_no = data.get('flight_no', '').strip()
+    if not flight_no:
+        errors.append('航班号不能为空')
+    
+    # 验证承运代码（必填）
+    carry_code = data.get('carry_code', '').strip()
+    if not carry_code:
+        errors.append('承运代码不能为空')
+    
+    # 检查目的地唯一性（只要邮件类型和目的地格式正确就检查）
+    mail_class = data.get('mail_class', '')
+    destination = data.get('des', '')
+    
+    # 只有当邮件类型和目的地都有效时才检查唯一性
+    if mail_class in ['TY', 'PY'] and destination and len(destination) == 3 and destination.isalpha():
+        is_valid, error_msg = check_destination_uniqueness(
+            mail_class, 
+            destination.upper(), 
+            connection, 
+            exclude_id
+        )
+        if not is_valid:
+            errors.append(error_msg)
+    
+    return len(errors) == 0, errors
+
 # MySQL数据库配置
 DB_CONFIG = {
     'host': 'localhost',
@@ -245,6 +348,24 @@ def roles():
                          roles=roles_list,
                          permissions=user_permissions)
 
+# 产品信息管理页面
+@app.route('/products')
+def products():
+    if 'loggedin' not in session:
+        return redirect(url_for('login'))
+    
+    # 检查用户是否有产品管理权限
+    user_permissions = get_user_permissions(session['user_id'])
+    if 'products' not in user_permissions:
+        flash('您没有访问产品信息管理的权限！', 'error')
+        return redirect(url_for('dashboard'))
+    
+    products_list = get_all_products()
+    return render_template('products.html', 
+                         username=session.get('user_name', session['username']),
+                         products=products_list,
+                         permissions=user_permissions)
+
 # 获取所有角色
 def get_all_roles():
     """获取所有角色信息"""
@@ -263,6 +384,31 @@ def get_all_roles():
         return roles
     except Error as e:
         print(f"获取角色列表错误: {e}")
+        return []
+    finally:
+        if connection.is_connected():
+            cursor.close()
+            connection.close()
+
+# 获取所有产品
+def get_all_products():
+    """获取所有产品信息"""
+    connection = get_db_connection()
+    if connection is None:
+        return []
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT product_id, product_code, product_name, product_type, 
+                   unit_price, status, description, created_at, updated_at 
+            FROM products 
+            ORDER BY created_at DESC
+        """)
+        products = cursor.fetchall()
+        return products
+    except Error as e:
+        print(f"获取产品列表错误: {e}")
         return []
     finally:
         if connection.is_connected():
@@ -366,7 +512,8 @@ def add_employee():
         return jsonify({'success': False, 'message': f'添加失败: {str(e)}'})
     finally:
         if connection:
-            cursor.close()
+            if 'cursor' in locals():
+                cursor.close()
             connection.close()
 
 # 更新员工
@@ -419,8 +566,9 @@ def update_employee():
     except Error as e:
         return jsonify({'success': False, 'message': f'更新失败: {str(e)}'})
     finally:
-        if connection:
+        if 'cursor' in locals() and cursor:
             cursor.close()
+        if connection:
             connection.close()
 
 # 删除员工
@@ -448,8 +596,9 @@ def delete_employee():
     except Error as e:
         return jsonify({'success': False, 'message': f'删除失败: {str(e)}'})
     finally:
-        if connection:
+        if 'cursor' in locals() and cursor:
             cursor.close()
+        if connection:
             connection.close()
 
 # 添加角色
@@ -481,8 +630,9 @@ def add_role():
             return jsonify({'success': False, 'message': '角色名称已存在'})
         return jsonify({'success': False, 'message': f'添加失败: {str(e)}'})
     finally:
-        if connection:
+        if 'cursor' in locals() and cursor:
             cursor.close()
+        if connection:
             connection.close()
 
 # 更新角色
@@ -515,8 +665,9 @@ def update_role():
             return jsonify({'success': False, 'message': '角色名称已存在'})
         return jsonify({'success': False, 'message': f'更新失败: {str(e)}'})
     finally:
-        if connection:
+        if 'cursor' in locals() and cursor:
             cursor.close()
+        if connection:
             connection.close()
 
 # 删除角色
@@ -546,8 +697,137 @@ def delete_role():
     except Error as e:
         return jsonify({'success': False, 'message': f'删除失败: {str(e)}'})
     finally:
-        if connection:
+        if 'cursor' in locals() and cursor:
             cursor.close()
+        if connection:
+            connection.close()
+
+# 新增产品
+@app.route('/add_product', methods=['POST'])
+def add_product():
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        product_code = request.form.get('product_code')
+        product_name = request.form.get('product_name')
+        product_type = request.form.get('product_type')
+        unit_price = request.form.get('unit_price')
+        status = request.form.get('status', '启用')
+        description = request.form.get('description', '')
+        
+        if not all([product_code, product_name, product_type, unit_price]):
+            return jsonify({'success': False, 'message': '请填写所有必填字段'})
+        
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor()
+            cursor.execute("""
+                INSERT INTO products (product_code, product_name, product_type, unit_price, status, description, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, NOW())
+            """, (product_code, product_name, product_type, float(unit_price), status, description))
+            connection.commit()
+            return jsonify({'success': True, 'message': '产品添加成功'})
+            
+    except Error as e:
+        if 'Duplicate entry' in str(e):
+            return jsonify({'success': False, 'message': '产品代码已存在'})
+        return jsonify({'success': False, 'message': f'添加失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if connection:
+            connection.close()
+
+# 获取单个产品信息
+@app.route('/get_product/<int:product_id>')
+def get_product(product_id):
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT product_id, product_code, product_name, product_type, 
+                       unit_price, status, description, created_at, updated_at
+                FROM products WHERE product_id = %s
+            """, (product_id,))
+            product = cursor.fetchone()
+            
+            if product:
+                return jsonify({'success': True, 'product': product})
+            else:
+                return jsonify({'success': False, 'message': '产品不存在'})
+                
+    except Error as e:
+        return jsonify({'success': False, 'message': f'获取产品信息失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if connection:
+            connection.close()
+
+# 更新产品
+@app.route('/update_product/<int:product_id>', methods=['PUT'])
+def update_product(product_id):
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        product_code = request.form.get('product_code')
+        product_name = request.form.get('product_name')
+        product_type = request.form.get('product_type')
+        unit_price = request.form.get('unit_price')
+        status = request.form.get('status')
+        description = request.form.get('description', '')
+        
+        if not all([product_code, product_name, product_type, unit_price]):
+            return jsonify({'success': False, 'message': '请填写所有必填字段'})
+        
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor()
+            cursor.execute("""
+                UPDATE products 
+                SET product_code = %s, product_name = %s, product_type = %s, 
+                    unit_price = %s, status = %s, description = %s, updated_at = NOW()
+                WHERE product_id = %s
+            """, (product_code, product_name, product_type, float(unit_price), status, description, product_id))
+            connection.commit()
+            return jsonify({'success': True, 'message': '产品更新成功'})
+            
+    except Error as e:
+        if 'Duplicate entry' in str(e):
+            return jsonify({'success': False, 'message': '产品代码已存在'})
+        return jsonify({'success': False, 'message': f'更新失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if connection:
+            connection.close()
+
+# 删除产品
+@app.route('/delete_product/<int:product_id>', methods=['DELETE'])
+def delete_product(product_id):
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor()
+            cursor.execute("DELETE FROM products WHERE product_id = %s", (product_id,))
+            connection.commit()
+            return jsonify({'success': True, 'message': '产品删除成功'})
+            
+    except Error as e:
+        return jsonify({'success': False, 'message': f'删除失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if connection:
             connection.close()
 
 # 重置员工密码
@@ -575,8 +855,9 @@ def reset_password():
     except Error as e:
         return jsonify({'success': False, 'message': f'重置失败: {str(e)}'})
     finally:
-        if connection:
+        if 'cursor' in locals() and cursor:
             cursor.close()
+        if connection:
             connection.close()
 
 # 修改密码
@@ -638,26 +919,47 @@ def change_password():
     except Exception as e:
         return jsonify({'success': False, 'message': f'系统错误: {str(e)}'})
     finally:
-        if connection:
+        if 'cursor' in locals() and cursor:
             cursor.close()
+        if connection:
             connection.close()
 
 # 获取所有账单信息
-def get_all_bill_info():
+def get_all_bill_info(page=1, per_page=15):
     connection = get_db_connection()
     if connection:
         try:
             cursor = connection.cursor(dictionary=True)
-            cursor.execute("SELECT * FROM bill_info ORDER BY created_at DESC")
+            
+            # 计算偏移量
+            offset = (page - 1) * per_page
+            
+            # 获取总记录数
+            cursor.execute("SELECT COUNT(*) as total FROM bill_info")
+            total_count = cursor.fetchone()['total']
+            
+            # 获取分页数据
+            cursor.execute("SELECT * FROM bill_info ORDER BY created_at DESC LIMIT %s OFFSET %s", 
+                         (per_page, offset))
             bill_info = cursor.fetchall()
-            return bill_info
+            
+            # 计算总页数
+            total_pages = (total_count + per_page - 1) // per_page
+            
+            return {
+                'data': bill_info,
+                'total': total_count,
+                'page': page,
+                'per_page': per_page,
+                'total_pages': total_pages
+            }
         except Error as e:
             print(f"获取账单信息列表错误: {e}")
-            return []
+            return {'data': [], 'total': 0, 'page': 1, 'per_page': per_page, 'total_pages': 0}
         finally:
             cursor.close()
             connection.close()
-    return []
+    return {'data': [], 'total': 0, 'page': 1, 'per_page': per_page, 'total_pages': 0}
 
 @app.route('/bill_info')
 def bill_info():
@@ -673,11 +975,66 @@ def bill_info():
         flash('您没有访问账单信息管理的权限！', 'error')
         return redirect(url_for('dashboard'))
     
-    bill_info_list = get_all_bill_info()
+    # 获取第一页数据用于初始显示
+    bill_info_result = get_all_bill_info(1, 15)
     return render_template('bill_info.html', 
-                         username=session['username'], 
+                         username=session.get('user_name', session['username']), 
                          permissions=permissions,
-                         bill_info=bill_info_list)
+                         bill_info=bill_info_result['data'],
+                         pagination={
+                             'total': bill_info_result['total'],
+                             'page': bill_info_result['page'],
+                             'per_page': bill_info_result['per_page'],
+                             'total_pages': bill_info_result['total_pages']
+                         })
+
+@app.route('/get_bill_info')
+def get_bill_info():
+    """获取账单信息列表API"""
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        # 获取分页参数
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 15, type=int)
+        
+        # 限制每页最大数量
+        if per_page > 100:
+            per_page = 100
+        
+        bill_info_result = get_all_bill_info(page, per_page)
+        return jsonify({'success': True, **bill_info_result})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'获取数据失败: {str(e)}'})
+
+@app.route('/get_bill_info/<int:bill_id>')
+def get_single_bill_info(bill_id):
+    """获取单个账单信息API"""
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'success': False, 'message': '数据库连接失败'})
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM bill_info WHERE id = %s", (bill_id,))
+        bill = cursor.fetchone()
+        
+        if bill:
+            return jsonify({'success': True, 'data': bill})
+        else:
+            return jsonify({'success': False, 'message': '未找到账单信息'})
+            
+    except Error as e:
+        return jsonify({'success': False, 'message': f'获取数据失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if connection:
+            connection.close()
 
 @app.route('/add_bill_info', methods=['POST'])
 def add_bill_info():
@@ -689,8 +1046,17 @@ def add_bill_info():
     if not connection:
         return jsonify({'success': False, 'message': '数据库连接失败'})
     
+    cursor = None
     try:
-        data = request.get_json()
+        data = request.get_json() or request.form.to_dict()
+        print(f"Received data: {data}")  # 调试日志
+        
+        # 验证数据
+        is_valid, errors = validate_bill_data(data, connection)
+        print(f"Validation result: {is_valid}, errors: {errors}")  # 调试日志
+        if not is_valid:
+            return jsonify({'success': False, 'message': '; '.join(errors)})
+        
         cursor = connection.cursor()
         
         # 插入新账单信息
@@ -699,12 +1065,22 @@ def add_bill_info():
         VALUES (%s, %s, %s, %s, %s, %s)
         """
         
+        # 安全处理quote字段
+        quote_value = data.get('quote')
+        if quote_value:
+            try:
+                quote_float = float(quote_value)
+            except (ValueError, TypeError):
+                quote_float = None
+        else:
+            quote_float = None
+            
         bill_data = (
-            data['mail_class'],
-            data['des'],
+            data.get('mail_class', ''),
+            data.get('des', ''),
             data.get('route_info', ''),
             data.get('flight_no', ''),
-            data.get('quote', None),
+            quote_float,
             data.get('carry_code', '')
         )
         
@@ -718,12 +1094,13 @@ def add_bill_info():
     except Exception as e:
         return jsonify({'success': False, 'message': f'系统错误: {str(e)}'})
     finally:
-        if connection:
+        if 'cursor' in locals() and cursor:
             cursor.close()
+        if connection:
             connection.close()
 
-@app.route('/update_bill_info', methods=['POST'])
-def update_bill_info():
+@app.route('/update_bill_info/<int:bill_id>', methods=['PUT'])
+def update_bill_info(bill_id):
     """更新账单信息"""
     if 'loggedin' not in session:
         return jsonify({'success': False, 'message': '请先登录'})
@@ -733,9 +1110,14 @@ def update_bill_info():
         return jsonify({'success': False, 'message': '数据库连接失败'})
     
     try:
-        data = request.get_json()
+        data = request.get_json() or request.form.to_dict()
+        
+        # 验证数据（排除当前记录ID）
+        is_valid, errors = validate_bill_data(data, connection, exclude_id=bill_id)
+        if not is_valid:
+            return jsonify({'success': False, 'message': '; '.join(errors)})
+        
         cursor = connection.cursor()
-        bill_id = data['id']
         
         # 更新账单信息
         update_query = """
@@ -744,12 +1126,22 @@ def update_bill_info():
         WHERE id = %s
         """
         
+        # 安全处理quote字段
+        quote_value = data.get('quote')
+        if quote_value:
+            try:
+                quote_float = float(quote_value)
+            except (ValueError, TypeError):
+                quote_float = None
+        else:
+            quote_float = None
+            
         bill_data = (
-            data['mail_class'],
-            data['des'],
+            data.get('mail_class', ''),
+            data.get('des', ''),
             data.get('route_info', ''),
             data.get('flight_no', ''),
-            data.get('quote', None),
+            quote_float,
             data.get('carry_code', ''),
             bill_id
         )
@@ -767,12 +1159,13 @@ def update_bill_info():
     except Exception as e:
         return jsonify({'success': False, 'message': f'系统错误: {str(e)}'})
     finally:
-        if connection:
+        if 'cursor' in locals() and cursor:
             cursor.close()
+        if connection:
             connection.close()
 
-@app.route('/delete_bill_info', methods=['POST'])
-def delete_bill_info():
+@app.route('/delete_bill_info/<int:bill_id>', methods=['DELETE'])
+def delete_bill_info(bill_id):
     """删除账单信息"""
     if 'loggedin' not in session:
         return jsonify({'success': False, 'message': '请先登录'})
@@ -782,9 +1175,7 @@ def delete_bill_info():
         return jsonify({'success': False, 'message': '数据库连接失败'})
     
     try:
-        data = request.get_json()
         cursor = connection.cursor()
-        bill_id = data['id']
         
         cursor.execute("DELETE FROM bill_info WHERE id = %s", (bill_id,))
         connection.commit()
@@ -799,9 +1190,12 @@ def delete_bill_info():
     except Exception as e:
         return jsonify({'success': False, 'message': f'系统错误: {str(e)}'})
     finally:
-        if connection:
+        if 'cursor' in locals() and cursor:
             cursor.close()
+        if connection:
             connection.close()
+
+
 
 @app.route('/import_bill_excel', methods=['POST'])
 def import_bill_excel():
@@ -809,122 +1203,124 @@ def import_bill_excel():
     if 'loggedin' not in session:
         return jsonify({'success': False, 'message': '请先登录'})
     
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'message': '未选择文件'})
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'success': False, 'message': '未选择文件'})
+    
+    if not allowed_file(file.filename):
+        return jsonify({'success': False, 'message': '文件格式不支持，请上传.xlsx或.xls文件'})
+    
+    connection = None
     try:
-        # 检查是否有文件上传
-        if 'excel_file' not in request.files:
-            return jsonify({'success': False, 'message': '请选择要上传的Excel文件'})
+        # 读取Excel文件
+        df = pd.read_excel(file)
         
-        file = request.files['excel_file']
+        # 验证表头
+        required_columns = ['邮件类型', '目的地', '路由信息', '航班号', '报价', '承运代码']
+        missing_columns = [col for col in required_columns if col not in df.columns]
         
-        # 检查文件名
-        if file.filename == '':
-            return jsonify({'success': False, 'message': '请选择要上传的Excel文件'})
+        if missing_columns:
+            return jsonify({
+                'success': False, 
+                'message': f'Excel表头缺少必需字段: {", ".join(missing_columns)}'
+            })
         
-        if file and allowed_file(file.filename):
-            # 保存文件
-            filename = secure_filename(file.filename)
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"{timestamp}_{filename}"
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(filepath)
+        # 数据预处理
+        df = df[required_columns]  # 只保留需要的列
+        df = df.dropna(how='all')  # 删除完全空白的行
+        
+        if df.empty:
+            return jsonify({'success': False, 'message': 'Excel文件中没有有效数据'})
+        
+        # 获取数据库连接
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': '数据库连接失败'})
+        
+        # 开始事务
+        connection.start_transaction()
+        cursor = connection.cursor()
+        
+        # 批量验证所有数据
+        validation_errors = []
+        processed_data = []
+        existing_combinations = set()  # 用于检查Excel内部重复
+        
+        for index, row in df.iterrows():
+            row_num = index + 2  # Excel行号（从第2行开始，第1行是表头）
             
-            try:
-                # 读取Excel文件
-                df = pd.read_excel(filepath)
-                
-                # 检查必需的列
-                required_columns = ['邮件类型', '目的地']
-                optional_columns = ['路由信息', '航班信息', '报价', '运能编码']
-                
-                missing_columns = [col for col in required_columns if col not in df.columns]
-                if missing_columns:
-                    os.remove(filepath)  # 删除上传的文件
-                    return jsonify({'success': False, 'message': f'Excel文件缺少必需的列: {", ".join(missing_columns)}'})
-                
-                # 连接数据库
-                connection = get_db_connection()
-                if not connection:
-                    os.remove(filepath)
-                    return jsonify({'success': False, 'message': '数据库连接失败'})
-                
-                cursor = connection.cursor()
-                
-                success_count = 0
-                error_count = 0
-                error_messages = []
-                
-                # 逐行处理数据
-                for index, row in df.iterrows():
-                    try:
-                        # 获取必需字段
-                        mail_class = str(row['邮件类型']).strip() if pd.notna(row['邮件类型']) else ''
-                        des = str(row['目的地']).strip() if pd.notna(row['目的地']) else ''
-                        
-                        if not mail_class or not des:
-                            error_count += 1
-                            error_messages.append(f'第{index+2}行: 邮件类型和目的地不能为空')
-                            continue
-                        
-                        # 获取可选字段
-                        route_info = str(row['路由信息']).strip() if '路由信息' in df.columns and pd.notna(row['路由信息']) else None
-                        flight_no = str(row['航班信息']).strip() if '航班信息' in df.columns and pd.notna(row['航班信息']) else None
-                        carry_code = str(row['运能编码']).strip() if '运能编码' in df.columns and pd.notna(row['运能编码']) else None
-                        
-                        # 处理报价字段
-                        quote = None
-                        if '报价' in df.columns and pd.notna(row['报价']):
-                            try:
-                                quote = float(row['报价'])
-                            except (ValueError, TypeError):
-                                quote = None
-                        
-                        # 插入数据库
-                        insert_query = """
-                            INSERT INTO bill_info (mail_class, des, route_info, flight_no, quote, carry_code)
-                            VALUES (%s, %s, %s, %s, %s, %s)
-                        """
-                        cursor.execute(insert_query, (mail_class, des, route_info, flight_no, quote, carry_code))
-                        success_count += 1
-                        
-                    except Exception as row_error:
-                        error_count += 1
-                        error_messages.append(f'第{index+2}行: {str(row_error)}')
-                        continue
-                
-                connection.commit()
-                
-                # 删除上传的文件
-                os.remove(filepath)
-                
-                # 返回结果
-                if success_count > 0:
-                    message = f'导入完成！成功导入 {success_count} 条记录'
-                    if error_count > 0:
-                        message += f'，失败 {error_count} 条记录'
-                        if len(error_messages) <= 5:  # 只显示前5个错误
-                            message += f'\n错误详情：\n' + '\n'.join(error_messages[:5])
-                    return jsonify({'success': True, 'message': message})
-                else:
-                    message = '导入失败，没有成功导入任何记录'
-                    if error_messages:
-                        message += f'\n错误详情：\n' + '\n'.join(error_messages[:5])
-                    return jsonify({'success': False, 'message': message})
-                    
-            except Exception as excel_error:
-                # 删除上传的文件
-                if os.path.exists(filepath):
-                    os.remove(filepath)
-                return jsonify({'success': False, 'message': f'Excel文件处理错误: {str(excel_error)}'})
-            finally:
-                if connection:
-                    cursor.close()
-                    connection.close()
-                
-        else:
-            return jsonify({'success': False, 'message': '请上传有效的Excel文件(.xlsx或.xls格式)'})
+            # 构造数据字典
+            data = {
+                'mail_class': str(row['邮件类型']).strip() if pd.notna(row['邮件类型']) else '',
+                'des': str(row['目的地']).strip().upper() if pd.notna(row['目的地']) else '',
+                'route_info': str(row['路由信息']) if pd.notna(row['路由信息']) else '',
+                'flight_no': str(row['航班号']) if pd.notna(row['航班号']) else '',
+                'quote': row['报价'] if pd.notna(row['报价']) else None,
+                'carry_code': str(row['承运代码']) if pd.notna(row['承运代码']) else ''
+            }
             
+            # 验证单行数据
+            is_valid, errors = validate_bill_data(data, connection)
+            if not is_valid:
+                for error in errors:
+                    validation_errors.append(f'第{row_num}行: {error}')
+                continue
+            
+            # 检查Excel内部重复
+            combination_key = (data['mail_class'], data['des'])
+            if combination_key in existing_combinations:
+                validation_errors.append(f'第{row_num}行: 该目的地已有报价')
+                continue
+            existing_combinations.add(combination_key)
+            
+            processed_data.append(data)
+        
+        # 如果有验证错误，回滚事务并返回错误
+        if validation_errors:
+            connection.rollback()
+            return jsonify({
+                'success': False, 
+                'message': '数据验证失败，导入已取消:\n' + '\n'.join(validation_errors[:10])  # 最多显示10个错误
+            })
+        
+        # 所有数据验证通过，批量插入
+        insert_query = """
+        INSERT INTO bill_info (mail_class, des, route_info, flight_no, quote, carry_code)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        
+        for data in processed_data:
+            bill_data = (
+                data['mail_class'],
+                data['des'],
+                data['route_info'],
+                data['flight_no'],
+                float(data['quote']) if data['quote'] is not None else None,
+                data['carry_code']
+            )
+            cursor.execute(insert_query, bill_data)
+        
+        # 提交事务
+        connection.commit()
+        
+        return jsonify({
+            'success': True, 
+            'message': f'导入成功，共导入{len(processed_data)}条记录',
+            'imported_count': len(processed_data)
+        })
+        
     except Exception as e:
+        if connection:
+            connection.rollback()
         return jsonify({'success': False, 'message': f'导入失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if connection:
+            connection.close()
 
 @app.route('/logout')
 def logout():
@@ -948,10 +1344,10 @@ def init_bill_info_table():
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 mail_class VARCHAR(100) NOT NULL COMMENT '邮件类型',
                 des VARCHAR(200) NOT NULL COMMENT '目的地',
-                route_info TEXT COMMENT '路由信息',
-                flight_no VARCHAR(50) COMMENT '航班信息',
+                route_info VARCHAR(500) COMMENT '路由信息',
+                flight_no VARCHAR(100) COMMENT '航班信息',
                 quote DECIMAL(10,2) COMMENT '报价',
-                carry_code VARCHAR(50) COMMENT '运能编码',
+                carry_code VARCHAR(100) COMMENT '运能编码',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -976,11 +1372,28 @@ def init_bill_info_table():
             cursor.execute("SELECT COUNT(*) FROM roles WHERE role_name = '管理员'")
             admin_role_exists = cursor.fetchone()[0]
             
+            # 创建产品信息表
+            create_products_table = """
+            CREATE TABLE IF NOT EXISTS products (
+                product_id INT AUTO_INCREMENT PRIMARY KEY,
+                product_code VARCHAR(50) UNIQUE NOT NULL COMMENT '产品代码',
+                product_name VARCHAR(200) NOT NULL COMMENT '产品名称',
+                product_type VARCHAR(50) NOT NULL COMMENT '产品类型',
+                unit_price DECIMAL(10,2) NOT NULL COMMENT '单价',
+                status VARCHAR(20) DEFAULT '启用' COMMENT '状态',
+                description TEXT COMMENT '产品描述',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """
+            
+            cursor.execute(create_products_table)
+            
             if admin_role_exists == 0:
                 # 插入默认角色
                 insert_roles = """
                 INSERT INTO roles (role_name, permissions) VALUES 
-                ('管理员', 'employees,roles,bill_management'),
+                ('管理员', 'employees,roles,products,bill_management'),
                 ('普通用户', 'bill_management')
                 """
                 cursor.execute(insert_roles)

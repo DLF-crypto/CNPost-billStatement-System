@@ -58,22 +58,25 @@
                         </li>
                         {% endif %}
                         
-                        {% if 'employees' in permissions or 'roles' in permissions %}
-                        <li class="nav-item has-submenu active">
+                        {% if 'employees' in permissions or 'roles' in permissions or 'products' in permissions %}
+                        <li class="nav-item has-submenu">
                             <a href="#" class="nav-link" onclick="toggleSubmenu(this)">
                                 <i class="fas fa-database"></i>
                                 <span>基础资料管理</span>
                                 <i class="fas fa-chevron-right submenu-arrow"></i>
                             </a>
-                            <ul class="submenu" style="display: block;">
+                            <ul class="submenu">
                                 {% if 'employees' in permissions %}
                                 <li><a href="{{ url_for('employees') }}" class="submenu-link"><i class="fas fa-users"></i>员工管理</a></li>
                                 {% endif %}
                                 {% if 'roles' in permissions %}
                                 <li><a href="{{ url_for('roles') }}" class="submenu-link active"><i class="fas fa-user-tag"></i>角色管理</a></li>
                                 {% endif %}
-                                <li><a href="{{ url_for('bill_info') }}" class="submenu-link"><i class="fas fa-file-invoice"></i>账单信息管理</a></li>
-                            </ul>
+                                {% if 'products' in permissions %}
+                                <li><a href="{{ url_for('products') }}" class="submenu-link"><i class="fas fa-box"></i>产品信息管理</a></li>
+                                {% endif %}
+                                 <li><a href="{{ url_for('bill_info') }}" class="submenu-link"><i class="fas fa-file-invoice"></i>账单信息管理</a></li>
+                             </ul>
                         </li>
                         {% endif %}
                         
@@ -132,7 +135,7 @@
                 <!-- 角色列表 -->
                 <div class="role-list">
                     <div class="table-container">
-                        <table class="role-table">
+                        <table class="employee-table">
                             <thead>
                                 <tr>
                                     <th>角色ID</th>
@@ -329,21 +332,56 @@
         function toggleSubmenu(element) {
             const submenu = element.nextElementSibling;
             const arrow = element.querySelector('.submenu-arrow');
+            const isExpanded = submenu.style.maxHeight && submenu.style.maxHeight !== '0px';
             
-            if (submenu.style.maxHeight === '0px' || submenu.style.maxHeight === '') {
+            if (isExpanded) {
+                // 收起菜单
+                submenu.style.maxHeight = '0px';
+                if (arrow) {
+                    arrow.classList.remove('fa-chevron-down');
+                    arrow.classList.add('fa-chevron-right');
+                }
+                localStorage.setItem('submenuExpanded', 'false');
+            } else {
+                // 展开菜单
                 submenu.style.maxHeight = submenu.scrollHeight + 'px';
                 if (arrow) {
                     arrow.classList.remove('fa-chevron-right');
                     arrow.classList.add('fa-chevron-down');
                 }
-            } else {
+                localStorage.setItem('submenuExpanded', 'true');
+            }
+        }
+        
+        // 页面加载时检查菜单状态
+        document.addEventListener('DOMContentLoaded', function() {
+            const submenu = document.querySelector('.submenu');
+            const arrow = document.querySelector('.submenu-arrow');
+            const isExpanded = localStorage.getItem('submenuExpanded') === 'true';
+            
+            if (isExpanded && submenu) {
+                submenu.style.maxHeight = submenu.scrollHeight + 'px';
+                if (arrow) {
+                    arrow.classList.remove('fa-chevron-right');
+                    arrow.classList.add('fa-chevron-down');
+                }
+            } else if (submenu) {
                 submenu.style.maxHeight = '0px';
                 if (arrow) {
                     arrow.classList.remove('fa-chevron-down');
                     arrow.classList.add('fa-chevron-right');
                 }
             }
-        }
+            
+            // 二级菜单点击时设置展开状态
+            const submenuLinks = document.querySelectorAll('.submenu-link');
+            submenuLinks.forEach(function(link) {
+                link.addEventListener('click', function(e) {
+                    localStorage.setItem('submenuExpanded', 'true');
+                    e.stopPropagation();
+                });
+            });
+        });
 
         // 显示添加角色模态框
         function showAddRoleModal() {

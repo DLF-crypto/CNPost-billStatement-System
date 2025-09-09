@@ -6,6 +6,25 @@
     <title>账单信息管理 - 中邮账单管理系统</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .error-message {
+            color: #e74c3c;
+            font-size: 12px;
+            margin-top: 5px;
+            display: none;
+        }
+        
+        .form-group input.error {
+            border-color: #e74c3c;
+            box-shadow: 0 0 5px rgba(231, 76, 60, 0.3);
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 5px rgba(52, 152, 219, 0.3);
+        }
+    </style>
 </head>
 <body>
     <div class="dashboard-container">
@@ -58,22 +77,25 @@
                         </li>
                         {% endif %}
                         
-                        {% if 'employees' in permissions or 'roles' in permissions %}
-                        <li class="nav-item has-submenu active">
+                        {% if 'employees' in permissions or 'roles' in permissions or 'products' in permissions %}
+                        <li class="nav-item has-submenu">
                             <a href="#" class="nav-link" onclick="toggleSubmenu(this)">
                                 <i class="fas fa-database"></i>
                                 <span>基础资料管理</span>
                                 <i class="fas fa-chevron-right submenu-arrow"></i>
                             </a>
-                            <ul class="submenu" style="display: block;">
+                            <ul class="submenu">
                                 {% if 'employees' in permissions %}
                                 <li><a href="{{ url_for('employees') }}" class="submenu-link"><i class="fas fa-users"></i>员工管理</a></li>
                                 {% endif %}
                                 {% if 'roles' in permissions %}
                                 <li><a href="{{ url_for('roles') }}" class="submenu-link"><i class="fas fa-user-tag"></i>角色管理</a></li>
                                 {% endif %}
-                                <li><a href="{{ url_for('bill_info') }}" class="submenu-link active"><i class="fas fa-file-invoice"></i>账单信息管理</a></li>
-                            </ul>
+                                {% if 'products' in permissions %}
+                                <li><a href="{{ url_for('products') }}" class="submenu-link"><i class="fas fa-box"></i>产品信息管理</a></li>
+                                {% endif %}
+                                 <li><a href="{{ url_for('bill_info') }}" class="submenu-link active"><i class="fas fa-file-invoice"></i>账单信息管理</a></li>
+                             </ul>
                         </li>
                         {% endif %}
                         
@@ -109,284 +131,326 @@
 
             <!-- 主要内容 -->
             <main class="main-content">
-                <!-- 显示消息 -->
-                {% with messages = get_flashed_messages(with_categories=true) %}
-                    {% if messages %}
-                        {% for category, message in messages %}
-                            <div class="alert alert-{{ category }}">
-                                <i class="fas fa-{{ 'check-circle' if category == 'success' else 'exclamation-triangle' if category == 'error' else 'info-circle' }}"></i>
-                                {{ message }}
-                            </div>
-                        {% endfor %}
-                    {% endif %}
-                {% endwith %}
-                
                 <div class="content-header">
-                    <h2><i class="fas fa-file-invoice"></i>账单信息管理</h2>
-                    <div class="header-actions">
-                        <button class="btn btn-success" onclick="showImportModal()">
-                            <i class="fas fa-file-excel"></i>
-                            导入Excel
-                        </button>
-                        <button class="btn btn-primary" onclick="showAddBillModal()">
-                            <i class="fas fa-plus"></i>
-                            添加账单信息
+                    <h2><i class="fas fa-file-invoice"></i> 账单信息管理</h2>
+                </div>
+
+                <!-- 查询功能 -->
+                <div class="search-section" style="margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 8px; border: 1px solid #e9ecef;">
+                    <div class="search-form" style="display: flex; align-items: center; gap: 15px;">
+                        <label for="destination-search" style="font-weight: 500; color: #495057; white-space: nowrap;">
+                            <i class="fas fa-search"></i> 目的地查询:
+                        </label>
+                        <input type="text" 
+                               id="destination-search" 
+                               placeholder="输入目的地代码（如：ZRH）" 
+                               style="flex: 1; max-width: 300px; padding: 8px 12px; border: 1px solid #ced4da; border-radius: 4px; font-size: 14px;"
+                               oninput="filterByDestination(this.value)">
+                        <button type="button" 
+                                class="btn btn-secondary" 
+                                onclick="clearSearch()" 
+                                style="padding: 8px 16px; font-size: 14px;">
+                            <i class="fas fa-times"></i> 清空
                         </button>
                     </div>
+                </div>
+
+                <!-- 功能按钮 -->
+                <div class="action-buttons">
+                    <button class="btn btn-success" onclick="showImportModal()">
+                        <i class="fas fa-file-excel"></i> 导入Excel
+                    </button>
+                    <button class="btn btn-primary" onclick="showAddBillModal()">
+                        <i class="fas fa-plus"></i> 新增账单
+                    </button>
                 </div>
 
                 <!-- 账单信息列表 -->
                 <div class="bill-list">
                     <div class="table-container">
-                        <table class="bill-table">
+                        <table class="employee-table">
                             <thead>
                                 <tr>
-                                    <th>ID</th>
+                                    <th>序号</th>
                                     <th>邮件类型</th>
                                     <th>目的地</th>
                                     <th>路由信息</th>
-                                    <th>航班信息</th>
+                                    <th>航班号</th>
                                     <th>报价</th>
-                                    <th>运能编码</th>
-                                    <th>创建时间</th>
+                                    <th>承运代码</th>
                                     <th>操作</th>
                                 </tr>
                             </thead>
                             <tbody id="billTableBody">
-                                {% for bill in bill_info %}
-                                <tr>
-                                    <td>{{ bill.id }}</td>
-                                    <td>{{ bill.mail_class }}</td>
-                                    <td>{{ bill.des }}</td>
-                                    <td>{{ bill.route_info or '-' }}</td>
-                                    <td>{{ bill.flight_no or '-' }}</td>
-                                    <td>{{ '%.2f'|format(bill.quote) if bill.quote else '-' }}</td>
-                                    <td>{{ bill.carry_code or '-' }}</td>
-                                    <td>{{ bill.created_at.strftime('%Y-%m-%d %H:%M') if bill.created_at else '' }}</td>
-                                    <td>
-                                        <div class="action-buttons">
-                                            <button class="btn btn-sm btn-edit" onclick="editBill({{ bill.id }})">
-                                                <i class="fas fa-edit"></i>
-                                                编辑
-                                            </button>
-                                            <button class="btn btn-sm btn-delete" onclick="deleteBill({{ bill.id }})">
-                                                <i class="fas fa-trash"></i>
-                                                删除
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                                {% endfor %}
+                                <!-- 数据将通过JavaScript动态加载 -->
                             </tbody>
                         </table>
+                    </div>
+                    
+                    <!-- 分页导航栏 -->
+                    <div class="pagination-container">
+                        <div class="pagination-info">
+                            <span id="paginationInfo">显示第 1-15 条，共 0 条记录</span>
+                        </div>
+                        <div class="pagination">
+                            <button class="pagination-btn" id="firstPageBtn" onclick="goToPage(1)" disabled>
+                                <i class="fas fa-angle-double-left"></i> 首页
+                            </button>
+                            <button class="pagination-btn" id="prevPageBtn" onclick="goToPrevPage()" disabled>
+                                <i class="fas fa-angle-left"></i> 上一页
+                            </button>
+                            
+                            <div class="page-numbers" id="pageNumbers">
+                                <!-- 页码按钮将通过JavaScript动态生成 -->
+                            </div>
+                            
+                            <button class="pagination-btn" id="nextPageBtn" onclick="goToNextPage()">
+                                下一页 <i class="fas fa-angle-right"></i>
+                            </button>
+                            <button class="pagination-btn" id="lastPageBtn" onclick="goToLastPage()">
+                                末页 <i class="fas fa-angle-double-right"></i>
+                            </button>
+                        </div>
+                        
+                        <div class="page-size-selector">
+                            <label for="pageSizeSelect">每页显示：</label>
+                            <select id="pageSizeSelect" onchange="changePageSize()">
+                                <option value="15" selected>15条</option>
+                                <option value="30">30条</option>
+                                <option value="50">50条</option>
+                                <option value="100">100条</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
             </main>
         </div>
     </div>
 
-    <!-- 添加账单信息模态框 -->
+    <!-- 新增账单模态框 -->
     <div id="addBillModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3><i class="fas fa-plus"></i>添加账单信息</h3>
-                <span class="close" onclick="closeModal('addBillModal')">&times;</span>
+                <h3><i class="fas fa-plus"></i> 新增账单信息</h3>
+                <span class="close" onclick="closeAddBillModal()">&times;</span>
             </div>
             <div class="modal-body">
                 <form id="addBillForm">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="mailClass">邮件类型 <span class="required">*</span></label>
-                            <input type="text" id="mailClass" name="mail_class" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="des">目的地 <span class="required">*</span></label>
-                            <input type="text" id="des" name="des" required>
-                        </div>
+                    <div class="form-group">
+                        <label for="mail_class">邮件类型:</label>
+                        <input type="text" id="mail_class" name="mail_class" required placeholder="只能填写TY或PY" oninput="validateMailClass(this)">
+                        <div class="error-message" id="mail_class_error"></div>
                     </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="routeInfo">路由信息</label>
-                            <input type="text" id="routeInfo" name="route_info">
-                        </div>
-                        <div class="form-group">
-                            <label for="flightNo">航班信息</label>
-                            <input type="text" id="flightNo" name="flight_no">
-                        </div>
+                    <div class="form-group">
+                        <label for="des">目的地:</label>
+                        <input type="text" id="des" name="des" required placeholder="3个英文字母，如ZRH" maxlength="3" oninput="validateDestination(this)">
+                        <div class="error-message" id="des_error"></div>
                     </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="quote">报价</label>
-                            <input type="number" id="quote" name="quote" step="0.01" min="0">
-                        </div>
-                        <div class="form-group">
-                            <label for="carryCode">运能编码</label>
-                            <input type="text" id="carryCode" name="carry_code">
-                        </div>
+                    <div class="form-group">
+                        <label for="route_info">路由信息: <span style="color: red;">*</span></label>
+                        <input type="text" id="route_info" name="route_info" required placeholder="请输入路由信息" oninput="validateRequired(this)">
+                        <div class="error-message" id="route_info_error"></div>
+                    </div>
+                    <div class="form-group">
+                        <label for="flight_no">航班号: <span style="color: red;">*</span></label>
+                        <input type="text" id="flight_no" name="flight_no" required placeholder="请输入航班号" oninput="validateRequired(this)">
+                        <div class="error-message" id="flight_no_error"></div>
+                    </div>
+                    <div class="form-group">
+                        <label for="quote">报价:</label>
+                        <input type="number" id="quote" name="quote" step="0.01" min="0" required placeholder="精确到2位小数" oninput="validateQuote(this)">
+                        <div class="error-message" id="quote_error"></div>
+                    </div>
+                    <div class="form-group">
+                        <label for="carry_code">承运代码: <span style="color: red;">*</span></label>
+                        <input type="text" id="carry_code" name="carry_code" required placeholder="请输入承运代码" oninput="validateRequired(this)">
+                        <div class="error-message" id="carry_code_error"></div>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('addBillModal')">取消</button>
-                <button type="button" class="btn btn-primary" onclick="addBill()">添加</button>
+                <button type="button" class="btn btn-secondary" onclick="closeAddBillModal()">取消</button>
+                <button type="button" class="btn btn-primary" onclick="addBill()">保存</button>
             </div>
         </div>
     </div>
 
-    <!-- 编辑账单信息模态框 -->
+    <!-- 编辑账单模态框 -->
     <div id="editBillModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3><i class="fas fa-edit"></i>编辑账单信息</h3>
-                <span class="close" onclick="closeModal('editBillModal')">&times;</span>
+                <h3><i class="fas fa-edit"></i> 编辑账单信息</h3>
+                <span class="close" onclick="closeEditBillModal()">&times;</span>
             </div>
             <div class="modal-body">
                 <form id="editBillForm">
-                    <input type="hidden" id="editBillId">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="editMailClass">邮件类型 <span class="required">*</span></label>
-                            <input type="text" id="editMailClass" name="mail_class" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="editDes">目的地 <span class="required">*</span></label>
-                            <input type="text" id="editDes" name="des" required>
-                        </div>
+                    <input type="hidden" id="edit_bill_id" name="id">
+                    <div class="form-group">
+                        <label for="edit_mail_class">邮件类型:</label>
+                        <input type="text" id="edit_mail_class" name="mail_class" required placeholder="只能填写TY或PY" oninput="validateMailClass(this, 'edit_')">
+                        <div class="error-message" id="edit_mail_class_error"></div>
                     </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="editRouteInfo">路由信息</label>
-                            <input type="text" id="editRouteInfo" name="route_info">
-                        </div>
-                        <div class="form-group">
-                            <label for="editFlightNo">航班信息</label>
-                            <input type="text" id="editFlightNo" name="flight_no">
-                        </div>
+                    <div class="form-group">
+                        <label for="edit_des">目的地:</label>
+                        <input type="text" id="edit_des" name="des" required placeholder="3个英文字母，如ZRH" maxlength="3" oninput="validateDestination(this, 'edit_')">
+                        <div class="error-message" id="edit_des_error"></div>
                     </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="editQuote">报价</label>
-                            <input type="number" id="editQuote" name="quote" step="0.01" min="0">
-                        </div>
-                        <div class="form-group">
-                            <label for="editCarryCode">运能编码</label>
-                            <input type="text" id="editCarryCode" name="carry_code">
-                        </div>
+                    <div class="form-group">
+                        <label for="edit_route_info">路由信息: <span style="color: red;">*</span></label>
+                        <input type="text" id="edit_route_info" name="route_info" required placeholder="请输入路由信息" oninput="validateRequired(this, 'edit_')">
+                        <div class="error-message" id="edit_route_info_error"></div>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit_flight_no">航班号: <span style="color: red;">*</span></label>
+                        <input type="text" id="edit_flight_no" name="flight_no" required placeholder="请输入航班号" oninput="validateRequired(this, 'edit_')">
+                        <div class="error-message" id="edit_flight_no_error"></div>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit_quote">报价:</label>
+                        <input type="number" id="edit_quote" name="quote" step="0.01" min="0" required placeholder="精确到2位小数" oninput="validateQuote(this, 'edit_')">
+                        <div class="error-message" id="edit_quote_error"></div>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit_carry_code">承运代码: <span style="color: red;">*</span></label>
+                        <input type="text" id="edit_carry_code" name="carry_code" required placeholder="请输入承运代码" oninput="validateRequired(this, 'edit_')">
+                        <div class="error-message" id="edit_carry_code_error"></div>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('editBillModal')">取消</button>
+                <button type="button" class="btn btn-secondary" onclick="closeEditBillModal()">取消</button>
                 <button type="button" class="btn btn-primary" onclick="updateBill()">更新</button>
             </div>
         </div>
     </div>
 
-    <!-- 导入Excel模态框 -->
+    <!-- Excel导入模态框 -->
     <div id="importModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3><i class="fas fa-file-excel"></i>导入Excel文件</h3>
-                <span class="close" onclick="closeModal('importModal')">&times;</span>
+                <h3><i class="fas fa-file-excel"></i> 导入Excel文件</h3>
+                <span class="close" onclick="closeImportModal()">&times;</span>
             </div>
             <div class="modal-body">
                 <div class="import-info">
-                    <p><i class="fas fa-info-circle"></i> 请选择包含账单信息的Excel文件</p>
-                    <p>Excel文件应包含以下列：邮件类型、目的地、路由信息、航班信息、报价、运能编码</p>
+                    <p><strong>导入说明：</strong></p>
+                    <ul>
+                        <li>Excel文件必须包含以下表头字段：邮件类型、目的地、路由信息、航班号、报价、承运代码</li>
+                        <li>表头字段名称必须完全匹配，顺序可以不同</li>
+                        <li>支持.xlsx和.xls格式文件</li>
+                        <li>导入前会自动验证表头格式</li>
+                    </ul>
                 </div>
                 <form id="importForm" enctype="multipart/form-data">
                     <div class="form-group">
-                        <label for="excelFile">选择Excel文件 <span class="required">*</span></label>
-                        <input type="file" id="excelFile" name="excel_file" accept=".xlsx,.xls" required>
+                        <label for="excelFile">选择Excel文件:</label>
+                        <input type="file" id="excelFile" name="file" accept=".xlsx,.xls" required>
                     </div>
+                    <div id="importProgress" class="progress-container" style="display: none;">
+                        <div class="progress-bar">
+                            <div class="progress-fill"></div>
+                        </div>
+                        <div class="progress-text">正在导入...</div>
+                    </div>
+                    <div id="importResult" class="import-result" style="display: none;"></div>
                 </form>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('importModal')">取消</button>
-                <button type="button" class="btn btn-success" onclick="importExcel()">导入</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- 修改密码模态框 -->
-    <div id="changePasswordModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3><i class="fas fa-key"></i>修改密码</h3>
-                <span class="close" onclick="closeModal('changePasswordModal')">&times;</span>
-            </div>
-            <div class="modal-body">
-                <form id="changePasswordForm">
-                    <div class="form-group">
-                        <label for="currentPassword">当前密码</label>
-                        <input type="password" id="currentPassword" name="currentPassword" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="newPassword">新密码</label>
-                        <input type="password" id="newPassword" name="newPassword" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="confirmPassword">确认新密码</label>
-                        <input type="password" id="confirmPassword" name="confirmPassword" required>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('changePasswordModal')">取消</button>
-                <button type="button" class="btn btn-primary" onclick="changePassword()">确认修改</button>
+                <button type="button" class="btn btn-secondary" onclick="closeImportModal()">取消</button>
+                <button type="button" class="btn btn-success" onclick="importExcel()">开始导入</button>
             </div>
         </div>
     </div>
 
     <script>
-        // 菜单展开/收起功能
-        function toggleSubmenu(element) {
-            const submenu = element.nextElementSibling;
-            const arrow = element.querySelector('.submenu-arrow');
+        // 分页相关全局变量
+        let currentPage = 1;
+        let pageSize = 15;
+        let totalPages = 1;
+        let totalRecords = 0;
+
+        // 页面加载时获取账单数据
+        document.addEventListener('DOMContentLoaded', function() {
+            loadBillData(1, 15);
+        });
+
+        // 加载账单数据
+        function loadBillData(page = 1, perPage = 15) {
+            const url = `/get_bill_info?page=${page}&per_page=${perPage}`;
             
-            if (submenu.style.maxHeight === '0px' || submenu.style.maxHeight === '') {
-                submenu.style.maxHeight = submenu.scrollHeight + 'px';
-                if (arrow) {
-                    arrow.classList.remove('fa-chevron-right');
-                    arrow.classList.add('fa-chevron-down');
-                }
-            } else {
-                submenu.style.maxHeight = '0px';
-                if (arrow) {
-                    arrow.classList.remove('fa-chevron-down');
-                    arrow.classList.add('fa-chevron-right');
-                }
-            }
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // 更新分页信息
+                        currentPage = data.page;
+                        pageSize = data.per_page;
+                        totalPages = data.total_pages;
+                        totalRecords = data.total;
+                        
+                        // 显示数据
+                        displayBillData(data.data);
+                        
+                        // 更新分页组件
+                        updatePagination();
+                    } else {
+                        console.error('加载数据失败:', data.message);
+                        alert('加载数据失败: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('请求失败:', error);
+                    alert('请求失败，请检查网络连接');
+                });
         }
 
-        // 显示添加账单信息模态框
+        // 显示账单数据
+        function displayBillData(bills) {
+            const tbody = document.getElementById('billTableBody');
+            tbody.innerHTML = '';
+            
+            bills.forEach((bill, index) => {
+                const row = document.createElement('tr');
+                // 计算正确的序号（考虑分页）
+                const serialNumber = (currentPage - 1) * pageSize + index + 1;
+                
+                row.innerHTML = `
+                    <td>${serialNumber}</td>
+                    <td>${bill.mail_class || '-'}</td>
+                    <td>${bill.des || '-'}</td>
+                    <td>${bill.route_info || '-'}</td>
+                    <td>${bill.flight_no || '-'}</td>
+                    <td>${bill.quote || '-'}</td>
+                    <td>${bill.carry_code || '-'}</td>
+                    <td class="table-actions">
+                        <button class="btn btn-sm btn-info" onclick="editBill(${bill.id})" title="编辑">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteBill(${bill.id})" title="删除">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // 显示新增模态框
         function showAddBillModal() {
             document.getElementById('addBillModal').style.display = 'block';
+        }
+
+        // 关闭新增模态框
+        function closeAddBillModal() {
+            document.getElementById('addBillModal').style.display = 'none';
             document.getElementById('addBillForm').reset();
         }
 
-        // 显示导入模态框
-        function showImportModal() {
-            document.getElementById('importModal').style.display = 'block';
-            document.getElementById('importForm').reset();
-        }
-
-        // 显示修改密码模态框
-        function showChangePasswordModal() {
-            document.getElementById('changePasswordModal').style.display = 'block';
-            document.getElementById('changePasswordForm').reset();
-        }
-
-        // 关闭模态框
-        function closeModal(modalId) {
-            document.getElementById(modalId).style.display = 'none';
-        }
-
-        // 添加账单信息
+        // 新增账单
         function addBill() {
             const form = document.getElementById('addBillForm');
             const formData = new FormData(form);
-            const data = Object.fromEntries(formData.entries());
+            const data = Object.fromEntries(formData);
 
             fetch('/add_bill_info', {
                 method: 'POST',
@@ -395,111 +459,199 @@
                 },
                 body: JSON.stringify(data)
             })
-            .then(response => response.json())
-            .then(result => {
-                if (result.success) {
-                    alert(result.message);
-                    closeModal('addBillModal');
-                    location.reload();
+            .then(response => {
+                console.log('Response status:', response.status);
+                console.log('Response ok:', response.ok);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                return response.json().then(data => ({
+                    status: response.status,
+                    ok: response.ok,
+                    data: data
+                })).catch(jsonError => {
+                    console.error('JSON parsing error:', jsonError);
+                    throw new Error('服务器返回的数据格式错误');
+                });
+            })
+            .then(({status, ok, data}) => {
+                console.log('Parsed data:', data);
+                if (data.success) {
+                    alert('账单信息添加成功');
+                    closeAddBillModal();
+                    loadBillData(currentPage, pageSize);
                 } else {
-                    alert('错误：' + result.message);
+                    // 显示具体的错误信息
+                    alert('添加失败: ' + (data.message || '未知错误'));
                 }
             })
             .catch(error => {
-                console.error('Error:', error);
-                alert('操作失败，请稍后重试');
+                console.error('请求失败:', error);
+                alert('请求失败: ' + error.message);
             });
         }
 
-        // 编辑账单信息
+        // 编辑账单
         function editBill(billId) {
-            // 从表格中获取账单信息
-            const rows = document.querySelectorAll('#billTableBody tr');
-            let targetRow = null;
-            
-            for (let row of rows) {
-                if (row.cells[0].textContent.trim() === billId.toString()) {
-                    targetRow = row;
-                    break;
-                }
-            }
-            
-            if (targetRow) {
-                fillEditForm(targetRow, billId);
-            } else {
-                alert('未找到账单信息');
-            }
+            fetch(`/get_bill_info/${billId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const bill = data.data;
+                        document.getElementById('edit_bill_id').value = bill.id;
+                        document.getElementById('edit_mail_class').value = bill.mail_class || '';
+                        document.getElementById('edit_des').value = bill.des || '';
+                        document.getElementById('edit_route_info').value = bill.route_info || '';
+                        document.getElementById('edit_flight_no').value = bill.flight_no || '';
+                        document.getElementById('edit_quote').value = bill.quote || '';
+                        document.getElementById('edit_carry_code').value = bill.carry_code || '';
+                        document.getElementById('editBillModal').style.display = 'block';
+                    } else {
+                        alert('获取账单信息失败: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('请求失败:', error);
+                    alert('请求失败，请检查网络连接');
+                });
         }
 
-        function fillEditForm(row, billId) {
-            document.getElementById('editBillId').value = billId;
-            document.getElementById('editMailClass').value = row.cells[1].textContent;
-            document.getElementById('editDes').value = row.cells[2].textContent;
-            document.getElementById('editRouteInfo').value = row.cells[3].textContent === '-' ? '' : row.cells[3].textContent;
-            document.getElementById('editFlightNo').value = row.cells[4].textContent === '-' ? '' : row.cells[4].textContent;
-            document.getElementById('editQuote').value = row.cells[5].textContent === '-' ? '' : row.cells[5].textContent;
-            document.getElementById('editCarryCode').value = row.cells[6].textContent === '-' ? '' : row.cells[6].textContent;
-            
-            document.getElementById('editBillModal').style.display = 'block';
+        // 关闭编辑模态框
+        function closeEditBillModal() {
+            document.getElementById('editBillModal').style.display = 'none';
+            document.getElementById('editBillForm').reset();
         }
 
-        // 更新账单信息
+        // 更新账单
         function updateBill() {
             const form = document.getElementById('editBillForm');
             const formData = new FormData(form);
-            const data = Object.fromEntries(formData.entries());
-            data.id = document.getElementById('editBillId').value;
+            const data = Object.fromEntries(formData);
+            const billId = data.id;
+            delete data.id;
 
-            fetch('/update_bill_info', {
-                method: 'POST',
+            fetch(`/update_bill_info/${billId}`, {
+                method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify(data)
             })
-            .then(response => response.json())
-            .then(result => {
-                if (result.success) {
-                    alert(result.message);
-                    closeModal('editBillModal');
-                    location.reload();
+            .then(response => {
+                // 无论状态码如何，都尝试解析JSON
+                return response.json().then(data => ({
+                    status: response.status,
+                    ok: response.ok,
+                    data: data
+                }));
+            })
+            .then(({status, ok, data}) => {
+                if (data.success) {
+                    alert('账单信息更新成功');
+                    closeEditBillModal();
+                    loadBillData(currentPage, pageSize);
                 } else {
-                    alert('错误：' + result.message);
+                    // 显示具体的错误信息
+                    alert('更新失败: ' + (data.message || '未知错误'));
                 }
             })
             .catch(error => {
-                console.error('Error:', error);
-                alert('操作失败，请稍后重试');
+                console.error('请求失败:', error);
+                alert('请求失败，请检查网络连接或稍后重试');
             });
         }
 
-        // 删除账单信息
+        // 删除账单
         function deleteBill(billId) {
-            if (confirm('确定要删除这条账单信息吗？此操作不可恢复！')) {
-                fetch('/delete_bill_info', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({id: billId})
+            if (confirm('确定要删除这条账单信息吗？')) {
+                fetch(`/delete_bill_info/${billId}`, {
+                    method: 'DELETE'
                 })
                 .then(response => response.json())
                 .then(result => {
                     if (result.success) {
-                        alert(result.message);
-                        location.reload();
+                        alert('账单信息删除成功');
+                        loadBillData(currentPage, pageSize);
                     } else {
-                        alert('错误：' + result.message);
+                        alert('删除失败: ' + result.message);
                     }
                 })
                 .catch(error => {
-                    console.error('Error:', error);
-                    alert('操作失败，请稍后重试');
+                    console.error('请求失败:', error);
+                    alert('请求失败，请检查网络连接');
                 });
             }
         }
 
-        // 导入Excel
+        // 菜单展开/收起功能
+        function toggleSubmenu(element) {
+            const submenu = element.nextElementSibling;
+            const arrow = element.querySelector('.submenu-arrow');
+            const isExpanded = submenu.style.maxHeight && submenu.style.maxHeight !== '0px';
+            
+            if (isExpanded) {
+                // 收起菜单
+                submenu.style.maxHeight = '0px';
+                if (arrow) {
+                    arrow.classList.remove('fa-chevron-down');
+                    arrow.classList.add('fa-chevron-right');
+                }
+                localStorage.setItem('submenuExpanded', 'false');
+            } else {
+                // 展开菜单
+                submenu.style.maxHeight = submenu.scrollHeight + 'px';
+                if (arrow) {
+                    arrow.classList.remove('fa-chevron-right');
+                    arrow.classList.add('fa-chevron-down');
+                }
+                localStorage.setItem('submenuExpanded', 'true');
+            }
+        }
+        
+        // 页面加载时检查菜单状态
+        document.addEventListener('DOMContentLoaded', function() {
+            const submenu = document.querySelector('.submenu');
+            const arrow = document.querySelector('.submenu-arrow');
+            const isExpanded = localStorage.getItem('submenuExpanded') === 'true';
+            
+            if (isExpanded && submenu) {
+                submenu.style.maxHeight = submenu.scrollHeight + 'px';
+                if (arrow) {
+                    arrow.classList.remove('fa-chevron-right');
+                    arrow.classList.add('fa-chevron-down');
+                }
+            } else if (submenu) {
+                submenu.style.maxHeight = '0px';
+                if (arrow) {
+                    arrow.classList.remove('fa-chevron-down');
+                    arrow.classList.add('fa-chevron-right');
+                }
+            }
+            
+            // 二级菜单点击时设置展开状态
+            const submenuLinks = document.querySelectorAll('.submenu-link');
+            submenuLinks.forEach(function(link) {
+                link.addEventListener('click', function() {
+                    localStorage.setItem('submenuExpanded', 'true');
+                });
+            });
+        });
+
+        // Excel导入相关函数
+        function showImportModal() {
+            document.getElementById('importModal').style.display = 'block';
+            // 重置表单
+            document.getElementById('importForm').reset();
+            document.getElementById('importProgress').style.display = 'none';
+            document.getElementById('importResult').style.display = 'none';
+        }
+
+        function closeImportModal() {
+            document.getElementById('importModal').style.display = 'none';
+        }
+
         function importExcel() {
             const fileInput = document.getElementById('excelFile');
             const file = fileInput.files[0];
@@ -509,14 +661,12 @@
                 return;
             }
             
-            const formData = new FormData();
-            formData.append('excel_file', file);
+            // 显示进度条
+            document.getElementById('importProgress').style.display = 'block';
+            document.getElementById('importResult').style.display = 'none';
             
-            // 显示加载状态
-            const importBtn = document.querySelector('#importModal .btn-success');
-            const originalText = importBtn.innerHTML;
-            importBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 导入中...';
-            importBtn.disabled = true;
+            const formData = new FormData();
+            formData.append('file', file);
             
             fetch('/import_bill_excel', {
                 method: 'POST',
@@ -524,59 +674,283 @@
             })
             .then(response => response.json())
             .then(result => {
+                // 隐藏进度条
+                document.getElementById('importProgress').style.display = 'none';
+                
+                // 显示结果
+                const resultDiv = document.getElementById('importResult');
+                resultDiv.style.display = 'block';
+                
                 if (result.success) {
-                    alert(result.message);
-                    closeModal('importModal');
-                    location.reload();
+                    resultDiv.innerHTML = `
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle"></i>
+                            导入成功！共导入 ${result.imported_count} 条记录
+                        </div>
+                    `;
+                    // 刷新表格数据
+                    setTimeout(() => {
+                        loadBillData(currentPage, pageSize);
+                        closeImportModal();
+                    }, 2000);
                 } else {
-                    alert('导入失败：' + result.message);
+                    resultDiv.innerHTML = `
+                        <div class="alert alert-error">
+                            <i class="fas fa-exclamation-circle"></i>
+                            导入失败：${result.message}
+                        </div>
+                    `;
                 }
             })
             .catch(error => {
-                console.error('Error:', error);
-                alert('导入失败，请稍后重试');
-            })
-            .finally(() => {
-                // 恢复按钮状态
-                importBtn.innerHTML = originalText;
-                importBtn.disabled = false;
+                console.error('导入失败:', error);
+                document.getElementById('importProgress').style.display = 'none';
+                const resultDiv = document.getElementById('importResult');
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = `
+                    <div class="alert alert-error">
+                        <i class="fas fa-exclamation-circle"></i>
+                        导入失败：网络错误或服务器异常
+                    </div>
+                `;
             });
         }
 
-        // 修改密码
-        function changePassword() {
-            const currentPassword = document.getElementById('currentPassword').value;
-            const newPassword = document.getElementById('newPassword').value;
-            const confirmPassword = document.getElementById('confirmPassword').value;
+        // 分页相关函数
+        function updatePagination() {
+            // 更新分页信息
+            const start = (currentPage - 1) * pageSize + 1;
+            const end = Math.min(currentPage * pageSize, totalRecords);
+            document.getElementById('paginationInfo').textContent = 
+                `显示第 ${start}-${end} 条，共 ${totalRecords} 条记录`;
             
-            if (newPassword !== confirmPassword) {
-                alert('新密码和确认密码不匹配');
-                return;
+            // 更新页码按钮
+            generatePageNumbers();
+            
+            // 更新导航按钮状态
+            document.getElementById('firstPageBtn').disabled = currentPage === 1;
+            document.getElementById('prevPageBtn').disabled = currentPage === 1;
+            document.getElementById('nextPageBtn').disabled = currentPage === totalPages;
+            document.getElementById('lastPageBtn').disabled = currentPage === totalPages;
+            
+            // 更新每页显示数量选择器
+            document.getElementById('pageSizeSelect').value = pageSize;
+        }
+        
+        function generatePageNumbers() {
+            const pageNumbersContainer = document.getElementById('pageNumbers');
+            pageNumbersContainer.innerHTML = '';
+            
+            // 计算显示的页码范围
+            let startPage = Math.max(1, currentPage - 2);
+            let endPage = Math.min(totalPages, currentPage + 2);
+            
+            // 确保显示5个页码（如果总页数足够）
+            if (endPage - startPage < 4) {
+                if (startPage === 1) {
+                    endPage = Math.min(totalPages, startPage + 4);
+                } else {
+                    startPage = Math.max(1, endPage - 4);
+                }
             }
             
-            fetch('/change_password', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    current_password: currentPassword,
-                    new_password: newPassword
-                })
-            })
-            .then(response => response.json())
-            .then(result => {
-                if (result.success) {
-                    alert(result.message);
-                    closeModal('changePasswordModal');
-                } else {
-                    alert('错误：' + result.message);
+            // 生成页码按钮
+            for (let i = startPage; i <= endPage; i++) {
+                const pageBtn = document.createElement('button');
+                pageBtn.className = `page-number ${i === currentPage ? 'active' : ''}`;
+                pageBtn.textContent = i;
+                pageBtn.onclick = () => goToPage(i);
+                pageNumbersContainer.appendChild(pageBtn);
+            }
+        }
+        
+        function goToPage(page) {
+            if (page >= 1 && page <= totalPages && page !== currentPage) {
+                loadBillData(page, pageSize);
+            }
+        }
+        
+        function goToPrevPage() {
+            if (currentPage > 1) {
+                goToPage(currentPage - 1);
+            }
+        }
+        
+        function goToNextPage() {
+            if (currentPage < totalPages) {
+                goToPage(currentPage + 1);
+            }
+        }
+        
+        function goToLastPage() {
+            goToPage(totalPages);
+        }
+        
+        function changePageSize() {
+            const newPageSize = parseInt(document.getElementById('pageSizeSelect').value);
+            pageSize = newPageSize;
+            loadBillData(1, pageSize); // 切换每页数量时回到第一页
+        }
+
+        // 前端验证函数
+        function validateMailClass(input, prefix = '') {
+            const value = input.value.trim().toUpperCase();
+            const errorElement = document.getElementById(prefix + 'mail_class_error');
+            
+            if (!value) {
+                showError(errorElement, '邮件类型不能为空');
+                return false;
+            }
+            
+            if (value !== 'TY' && value !== 'PY') {
+                showError(errorElement, '邮件类型字段不符合要求');
+                return false;
+            }
+            
+            hideError(errorElement);
+            input.value = value; // 自动转换为大写
+            return true;
+        }
+        
+        function validateDestination(input, prefix = '') {
+            const value = input.value.trim().toUpperCase();
+            const errorElement = document.getElementById(prefix + 'des_error');
+            
+            if (!value) {
+                showError(errorElement, '目的地不能为空');
+                return false;
+            }
+            
+            if (!/^[A-Z]{3}$/.test(value)) {
+                showError(errorElement, '目的地字段不符合要求');
+                return false;
+            }
+            
+            hideError(errorElement);
+            input.value = value; // 自动转换为大写
+            return true;
+        }
+        
+        function validateQuote(input, prefix = '') {
+            const value = input.value;
+            const errorElement = document.getElementById(prefix + 'quote_error');
+            
+            if (!value || value === '') {
+                showError(errorElement, '报价不能为空');
+                return false;
+            }
+            
+            const quote = parseFloat(value);
+            if (isNaN(quote) || quote < 0) {
+                showError(errorElement, '报价字段不符合要求');
+                return false;
+            }
+            
+            // 检查小数位数
+            const decimalPart = value.toString().split('.')[1];
+            if (decimalPart && decimalPart.length > 2) {
+                showError(errorElement, '报价字段不符合要求');
+                return false;
+            }
+            
+            hideError(errorElement);
+            return true;
+        }
+        
+        function showError(element, message) {
+            if (element) {
+                element.textContent = message;
+                element.style.display = 'block';
+                element.parentElement.querySelector('input').classList.add('error');
+            }
+        }
+        
+        function hideError(element) {
+            if (element) {
+                element.textContent = '';
+                element.style.display = 'none';
+                element.parentElement.querySelector('input').classList.remove('error');
+            }
+        }
+        
+        function validateRequired(input, prefix = '') {
+            const value = input.value.trim();
+            const fieldName = input.name;
+            const errorElement = document.getElementById(prefix + fieldName + '_error');
+            
+            if (!value) {
+                let fieldLabel = '';
+                switch(fieldName) {
+                    case 'route_info':
+                        fieldLabel = '路由信息';
+                        break;
+                    case 'flight_no':
+                        fieldLabel = '航班号';
+                        break;
+                    case 'carry_code':
+                        fieldLabel = '承运代码';
+                        break;
+                    default:
+                        fieldLabel = '此字段';
                 }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('操作失败，请稍后重试');
+                showError(errorElement, fieldLabel + '不能为空');
+                return false;
+            }
+            
+            hideError(errorElement);
+            return true;
+        }
+        
+        function validateForm(formId, prefix = '') {
+            const mailClassInput = document.getElementById(prefix + 'mail_class');
+            const desInput = document.getElementById(prefix + 'des');
+            const quoteInput = document.getElementById(prefix + 'quote');
+            const routeInfoInput = document.getElementById(prefix + 'route_info');
+            const flightNoInput = document.getElementById(prefix + 'flight_no');
+            const carryCodeInput = document.getElementById(prefix + 'carry_code');
+            
+            const isMailClassValid = validateMailClass(mailClassInput, prefix);
+            const isDesValid = validateDestination(desInput, prefix);
+            const isQuoteValid = validateQuote(quoteInput, prefix);
+            const isRouteInfoValid = validateRequired(routeInfoInput, prefix);
+            const isFlightNoValid = validateRequired(flightNoInput, prefix);
+            const isCarryCodeValid = validateRequired(carryCodeInput, prefix);
+            
+            return isMailClassValid && isDesValid && isQuoteValid && isRouteInfoValid && isFlightNoValid && isCarryCodeValid;
+        }
+
+        // 目的地查询功能
+        function filterByDestination(searchValue) {
+            const searchTerm = searchValue.trim().toUpperCase();
+            const tableRows = document.querySelectorAll('.employee-table tbody tr');
+            
+            tableRows.forEach(row => {
+                const destinationCell = row.cells[2]; // 目的地列（第3列，索引为2）
+                if (destinationCell) {
+                    const destination = destinationCell.textContent.trim().toUpperCase();
+                    if (searchTerm === '' || destination.includes(searchTerm)) {
+                        row.style.display = '';
+                    } else {
+                        row.style.display = 'none';
+                    }
+                }
             });
+            
+            // 更新显示的记录数
+            updateRecordCount();
+        }
+        
+        function clearSearch() {
+            document.getElementById('destination-search').value = '';
+            filterByDestination('');
+        }
+        
+        function updateRecordCount() {
+            const visibleRows = document.querySelectorAll('.employee-table tbody tr[style=""], .employee-table tbody tr:not([style*="display: none"])');
+            const totalRows = document.querySelectorAll('.employee-table tbody tr');
+            
+            // 如果页面有记录计数显示元素，可以在这里更新
+            console.log(`显示 ${visibleRows.length} / ${totalRows.length} 条记录`);
         }
 
         // 用户下拉菜单交互
@@ -586,33 +960,78 @@
         
         if (userDropdown && userButton && dropdownContent) {
             let isDropdownOpen = false;
+            let mouseLeaveTimer = null;
             
             // 点击用户按钮切换下拉菜单
             userButton.addEventListener('click', function(e) {
                 e.stopPropagation();
                 isDropdownOpen = !isDropdownOpen;
                 dropdownContent.classList.toggle('show', isDropdownOpen);
+                // 清除可能存在的延时关闭
+                if (mouseLeaveTimer) {
+                    clearTimeout(mouseLeaveTimer);
+                    mouseLeaveTimer = null;
+                }
             });
             
-            // 鼠标进入下拉菜单区域时保持显示
-            userDropdown.addEventListener('mouseenter', function() {
+            // 鼠标进入用户按钮区域时显示下拉菜单
+            userButton.addEventListener('mouseenter', function() {
                 if (!isDropdownOpen) {
                     isDropdownOpen = true;
                     dropdownContent.classList.add('show');
                 }
+                // 清除延时关闭
+                if (mouseLeaveTimer) {
+                    clearTimeout(mouseLeaveTimer);
+                    mouseLeaveTimer = null;
+                }
             });
             
-            // 鼠标离开下拉菜单区域时隐藏
-            userDropdown.addEventListener('mouseleave', function() {
-                isDropdownOpen = false;
-                dropdownContent.classList.remove('show');
+            // 鼠标进入下拉内容区域时保持显示
+            dropdownContent.addEventListener('mouseenter', function() {
+                // 清除延时关闭
+                if (mouseLeaveTimer) {
+                    clearTimeout(mouseLeaveTimer);
+                    mouseLeaveTimer = null;
+                }
+            });
+            
+            // 鼠标离开用户按钮时设置延时关闭
+            userButton.addEventListener('mouseleave', function() {
+                mouseLeaveTimer = setTimeout(function() {
+                    isDropdownOpen = false;
+                    dropdownContent.classList.remove('show');
+                }, 200); // 200ms延时，给用户时间移动到下拉框
+            });
+            
+            // 鼠标离开下拉内容区域时关闭
+            dropdownContent.addEventListener('mouseleave', function() {
+                mouseLeaveTimer = setTimeout(function() {
+                    isDropdownOpen = false;
+                    dropdownContent.classList.remove('show');
+                }, 200);
             });
             
             // 点击页面其他地方时隐藏下拉菜单
-            document.addEventListener('click', function() {
-                isDropdownOpen = false;
-                dropdownContent.classList.remove('show');
+            document.addEventListener('click', function(e) {
+                if (!userDropdown.contains(e.target)) {
+                    isDropdownOpen = false;
+                    dropdownContent.classList.remove('show');
+                    if (mouseLeaveTimer) {
+                        clearTimeout(mouseLeaveTimer);
+                        mouseLeaveTimer = null;
+                    }
+                }
             });
+        }
+
+        // 点击模态框外部关闭（仅编辑弹窗支持）
+        window.onclick = function(event) {
+            const editModal = document.getElementById('editBillModal');
+            
+            if (event.target === editModal) {
+                closeEditBillModal();
+            }
         }
     </script>
 </body>
