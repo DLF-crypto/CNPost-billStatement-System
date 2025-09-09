@@ -1409,3 +1409,46 @@ body {
         font-size: 16px;
     }
 }
+
+/* 消息提示样式 */
+.message {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 12px 20px;
+    border-radius: 6px;
+    color: white;
+    font-weight: 500;
+    z-index: 10000;
+    opacity: 0;
+    transform: translateX(100%);
+    transition: all 0.3s ease;
+    max-width: 400px;
+    word-wrap: break-word;
+}
+
+.message.show {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.message-success {
+    background: linear-gradient(135deg, #28a745, #20c997);
+    border-left: 4px solid #1e7e34;
+}
+
+.message-error {
+    background: linear-gradient(135deg, #dc3545, #c82333);
+    border-left: 4px solid #bd2130;
+}
+
+.message-info {
+    background: linear-gradient(135deg, #17a2b8, #138496);
+    border-left: 4px solid #117a8b;
+}
+
+.message-warning {
+    background: linear-gradient(135deg, #ffc107, #e0a800);
+    border-left: 4px solid #d39e00;
+    color: #212529;
+}

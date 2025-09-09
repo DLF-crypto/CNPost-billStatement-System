@@ -82,7 +82,7 @@
                         
                         {% if 'mail_data' in permissions %}
                         <li class="nav-item">
-                            <a href="#" class="nav-link">
+                            <a href="{{ url_for('mail_data') }}" class="nav-link">
                                 <i class="fas fa-envelope-open-text"></i>
                                 <span>邮件数据管理</span>
                             </a>

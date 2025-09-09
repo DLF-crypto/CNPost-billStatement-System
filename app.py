@@ -366,6 +366,22 @@ def products():
                          products=products_list,
                          permissions=user_permissions)
 
+# 邮件数据管理页面
+@app.route('/mail_data')
+def mail_data():
+    if 'loggedin' not in session:
+        return redirect(url_for('login'))
+    
+    # 检查用户是否有邮件数据管理权限
+    user_permissions = get_user_permissions(session['user_id'])
+    if 'mail_data' not in user_permissions:
+        flash('您没有访问邮件数据管理的权限！', 'error')
+        return redirect(url_for('dashboard'))
+    
+    return render_template('mail_data.html', 
+                         username=session.get('user_name', session['username']),
+                         permissions=user_permissions)
+
 # 获取所有角色
 def get_all_roles():
     """获取所有角色信息"""
@@ -400,8 +416,8 @@ def get_all_products():
     try:
         cursor = connection.cursor(dictionary=True)
         cursor.execute("""
-            SELECT product_id, product_code, product_name, product_type, 
-                   unit_price, status, description, created_at, updated_at 
+            SELECT product_id, product_identifier1, product_identifier2, 
+                   product_settle_code, product_name, created_at, updated_at 
             FROM products 
             ORDER BY created_at DESC
         """)
@@ -709,29 +725,27 @@ def add_product():
         return jsonify({'success': False, 'message': '请先登录'})
     
     try:
-        product_code = request.form.get('product_code')
+        product_identifier1 = request.form.get('product_identifier1')
+        product_identifier2 = request.form.get('product_identifier2')
+        product_settle_code = request.form.get('product_settle_code')
         product_name = request.form.get('product_name')
-        product_type = request.form.get('product_type')
-        unit_price = request.form.get('unit_price')
-        status = request.form.get('status', '启用')
-        description = request.form.get('description', '')
         
-        if not all([product_code, product_name, product_type, unit_price]):
+        if not all([product_identifier1, product_identifier2, product_settle_code, product_name]):
             return jsonify({'success': False, 'message': '请填写所有必填字段'})
         
         connection = get_db_connection()
         if connection:
             cursor = connection.cursor()
             cursor.execute("""
-                INSERT INTO products (product_code, product_name, product_type, unit_price, status, description, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, NOW())
-            """, (product_code, product_name, product_type, float(unit_price), status, description))
+                INSERT INTO products (product_identifier1, product_identifier2, product_settle_code, product_name, created_at)
+                VALUES (%s, %s, %s, %s, NOW())
+            """, (product_identifier1, product_identifier2, product_settle_code, product_name))
             connection.commit()
             return jsonify({'success': True, 'message': '产品添加成功'})
             
     except Error as e:
         if 'Duplicate entry' in str(e):
-            return jsonify({'success': False, 'message': '产品代码已存在'})
+            return jsonify({'success': False, 'message': '产品信息已存在'})
         return jsonify({'success': False, 'message': f'添加失败: {str(e)}'})
     finally:
         if 'cursor' in locals() and cursor:
@@ -750,8 +764,8 @@ def get_product(product_id):
         if connection:
             cursor = connection.cursor(dictionary=True)
             cursor.execute("""
-                SELECT product_id, product_code, product_name, product_type, 
-                       unit_price, status, description, created_at, updated_at
+                SELECT product_id, product_identifier1, product_identifier2, 
+                       product_settle_code, product_name, created_at, updated_at
                 FROM products WHERE product_id = %s
             """, (product_id,))
             product = cursor.fetchone()
@@ -776,14 +790,12 @@ def update_product(product_id):
         return jsonify({'success': False, 'message': '请先登录'})
     
     try:
-        product_code = request.form.get('product_code')
+        product_identifier1 = request.form.get('product_identifier1')
+        product_identifier2 = request.form.get('product_identifier2')
+        product_settle_code = request.form.get('product_settle_code')
         product_name = request.form.get('product_name')
-        product_type = request.form.get('product_type')
-        unit_price = request.form.get('unit_price')
-        status = request.form.get('status')
-        description = request.form.get('description', '')
         
-        if not all([product_code, product_name, product_type, unit_price]):
+        if not all([product_identifier1, product_identifier2, product_settle_code, product_name]):
             return jsonify({'success': False, 'message': '请填写所有必填字段'})
         
         connection = get_db_connection()
@@ -791,16 +803,16 @@ def update_product(product_id):
             cursor = connection.cursor()
             cursor.execute("""
                 UPDATE products 
-                SET product_code = %s, product_name = %s, product_type = %s, 
-                    unit_price = %s, status = %s, description = %s, updated_at = NOW()
+                SET product_identifier1 = %s, product_identifier2 = %s, product_settle_code = %s, 
+                    product_name = %s, updated_at = NOW()
                 WHERE product_id = %s
-            """, (product_code, product_name, product_type, float(unit_price), status, description, product_id))
+            """, (product_identifier1, product_identifier2, product_settle_code, product_name, product_id))
             connection.commit()
             return jsonify({'success': True, 'message': '产品更新成功'})
             
     except Error as e:
         if 'Duplicate entry' in str(e):
-            return jsonify({'success': False, 'message': '产品代码已存在'})
+            return jsonify({'success': False, 'message': '产品信息已存在'})
         return jsonify({'success': False, 'message': f'更新失败: {str(e)}'})
     finally:
         if 'cursor' in locals() and cursor:
@@ -829,6 +841,220 @@ def delete_product(product_id):
             cursor.close()
         if connection:
             connection.close()
+
+# 检查产品识别符1是否存在
+@app.route('/check_product_identifier1/<identifier1>', methods=['GET'])
+def check_product_identifier1(identifier1):
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT COUNT(*) FROM products WHERE product_identifier1 = %s", (identifier1,))
+            count = cursor.fetchone()[0]
+            return jsonify({'exists': count > 0})
+            
+    except Error as e:
+        return jsonify({'success': False, 'message': f'查询失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if connection:
+            connection.close()
+
+# 检查产品识别符组合是否存在
+@app.route('/check_product_identifiers/<identifier1>/<identifier2>', methods=['GET'])
+def check_product_identifiers(identifier1, identifier2):
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT COUNT(*) FROM products WHERE product_identifier1 = %s AND product_identifier2 = %s", (identifier1, identifier2))
+            count = cursor.fetchone()[0]
+            return jsonify({'exists': count > 0})
+            
+    except Error as e:
+        return jsonify({'success': False, 'message': f'查询失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if connection:
+            connection.close()
+
+# 检查产品识别符1是否存在（排除指定产品）
+@app.route('/check_product_identifier1_exclude/<identifier1>/<int:product_id>', methods=['GET'])
+def check_product_identifier1_exclude(identifier1, product_id):
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT COUNT(*) FROM products WHERE product_identifier1 = %s AND product_id != %s", (identifier1, product_id))
+            count = cursor.fetchone()[0]
+            return jsonify({'exists': count > 0})
+            
+    except Error as e:
+        return jsonify({'success': False, 'message': f'查询失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if connection:
+            connection.close()
+
+# 检查产品识别符组合是否存在（排除指定产品）
+@app.route('/check_product_identifiers_exclude/<identifier1>/<identifier2>/<int:product_id>', methods=['GET'])
+def check_product_identifiers_exclude(identifier1, identifier2, product_id):
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT COUNT(*) FROM products WHERE product_identifier1 = %s AND product_identifier2 = %s AND product_id != %s", (identifier1, identifier2, product_id))
+            count = cursor.fetchone()[0]
+            return jsonify({'exists': count > 0})
+            
+    except Error as e:
+        return jsonify({'success': False, 'message': f'查询失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if connection:
+            connection.close()
+
+# 获取所有产品数据（用于分页显示）
+@app.route('/get_products', methods=['GET'])
+def get_products():
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor(dictionary=True)
+            cursor.execute("SELECT * FROM products ORDER BY created_at DESC")
+            products = cursor.fetchall()
+            
+            # 转换日期格式
+            for product in products:
+                if product['created_at']:
+                    product['created_at'] = product['created_at'].isoformat()
+            
+            return jsonify({'success': True, 'products': products})
+            
+    except Error as e:
+        return jsonify({'success': False, 'message': f'获取产品数据失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if connection:
+            connection.close()
+
+# 导入产品Excel
+@app.route('/import_products', methods=['POST'])
+def import_products():
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'message': '没有选择文件'})
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'success': False, 'message': '没有选择文件'})
+    
+    if file and allowed_file(file.filename):
+        try:
+            # 读取Excel文件
+            df = pd.read_excel(file)
+            
+            # 清理列名（去除空格和特殊字符）
+            df.columns = df.columns.str.strip()
+            
+            # 检查必需的列
+            required_columns = ['产品识别符1', '产品结算代码', '产品中文名称']
+            actual_columns = list(df.columns)
+            
+            # 调试信息：记录实际的列名
+            print(f"Excel文件实际列名: {actual_columns}")
+            
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                return jsonify({
+                    'success': False, 
+                    'message': f'Excel文件缺少必需的列: {", ".join(missing_columns)}。实际列名: {", ".join(actual_columns)}'
+                })
+            
+            connection = get_db_connection()
+            if not connection:
+                return jsonify({'success': False, 'message': '数据库连接失败'})
+            
+            cursor = connection.cursor()
+            success_count = 0
+            error_messages = []
+            
+            for index, row in df.iterrows():
+                try:
+                    # 获取数据
+                    identifier1 = str(row['产品识别符1']).strip() if pd.notna(row['产品识别符1']) else ''
+                    identifier2 = str(row['产品识别符2']).strip() if '产品识别符2' in df.columns and pd.notna(row['产品识别符2']) else ''
+                    settle_code = str(row['产品结算代码']).strip() if pd.notna(row['产品结算代码']) else ''
+                    product_name = str(row['产品中文名称']).strip() if pd.notna(row['产品中文名称']) else ''
+                    
+                    # 验证必填项
+                    if not identifier1 or not settle_code or not product_name:
+                        error_messages.append(f'第{index+2}行: 产品识别符1、产品结算代码、产品中文名称为必填项')
+                        continue
+                    
+                    # 检查产品识别符1是否重复
+                    cursor.execute("SELECT COUNT(*) FROM products WHERE product_identifier1 = %s", (identifier1,))
+                    if cursor.fetchone()[0] > 0:
+                        if not identifier2:
+                            error_messages.append(f'第{index+2}行: 产品识别符1已存在，产品识别符2不能为空')
+                            continue
+                        # 检查组合是否重复
+                        cursor.execute("SELECT COUNT(*) FROM products WHERE product_identifier1 = %s AND product_identifier2 = %s", (identifier1, identifier2))
+                        if cursor.fetchone()[0] > 0:
+                            error_messages.append(f'第{index+2}行: 相同产品识别符1下的产品识别符2已存在')
+                            continue
+                    
+                    # 插入数据
+                    insert_query = "INSERT INTO products (product_identifier1, product_identifier2, product_settle_code, product_name) VALUES (%s, %s, %s, %s)"
+                    cursor.execute(insert_query, (identifier1, identifier2, settle_code, product_name))
+                    success_count += 1
+                    
+                except Exception as e:
+                    error_messages.append(f'第{index+2}行: {str(e)}')
+                    continue
+            
+            connection.commit()
+            
+            if error_messages:
+                return jsonify({
+                    'success': True, 
+                    'count': success_count,
+                    'message': f'部分导入成功，共导入{success_count}条记录。错误信息：' + '; '.join(error_messages[:5])  # 只显示前5个错误
+                })
+            else:
+                return jsonify({'success': True, 'count': success_count})
+                
+        except Exception as e:
+            return jsonify({'success': False, 'message': f'导入失败: {str(e)}'})
+        finally:
+            if 'cursor' in locals() and cursor:
+                cursor.close()
+            if 'connection' in locals() and connection:
+                connection.close()
+    else:
+        return jsonify({'success': False, 'message': '不支持的文件格式，请上传.xlsx或.xls文件'})
 
 # 重置员工密码
 @app.route('/reset_password', methods=['POST'])
@@ -1322,6 +1548,195 @@ def import_bill_excel():
         if connection:
             connection.close()
 
+# 获取邮件数据列表API
+@app.route('/api/mail_data', methods=['GET'])
+def get_mail_data():
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 15))
+        
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor(dictionary=True)
+            
+            # 计算偏移量
+            offset = (page - 1) * per_page
+            
+            # 获取总记录数
+            cursor.execute("SELECT COUNT(*) as total FROM mail_data")
+            total_count = cursor.fetchone()['total']
+            
+            # 获取分页数据
+            cursor.execute("""
+                SELECT mail_id, mail_receptacleNo, mail_originPost, mail_destPost, 
+                       mail_dest, mail_recTime, mail_upliftTime, mail_arriveTime, 
+                       mail_deliverTime, mail_routeInfo, mail_flightInfo, mail_weight, 
+                       mail_quote, mail_charge, mail_carrCode, created_at
+                FROM mail_data 
+                ORDER BY created_at DESC 
+                LIMIT %s OFFSET %s
+            """, (per_page, offset))
+            mail_data = cursor.fetchall()
+            
+            # 计算总页数
+            total_pages = (total_count + per_page - 1) // per_page
+            
+            return jsonify({
+                'success': True,
+                'data': mail_data,
+                'total': total_count,
+                'page': page,
+                'per_page': per_page,
+                'total_pages': total_pages
+            })
+        else:
+            return jsonify({'success': False, 'message': '数据库连接失败'})
+            
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'获取数据失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if 'connection' in locals() and connection:
+            connection.close()
+
+# 添加邮件数据API
+@app.route('/api/mail_data', methods=['POST'])
+def add_mail_data():
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        data = request.get_json()
+        
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor()
+            
+            insert_query = """
+                INSERT INTO mail_data (mail_receptacleNo, mail_originPost, mail_destPost, 
+                                     mail_dest, mail_recTime, mail_upliftTime, mail_arriveTime, 
+                                     mail_deliverTime, mail_routeInfo, mail_flightInfo, 
+                                     mail_weight, mail_quote, mail_charge, mail_carrCode)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            
+            cursor.execute(insert_query, (
+                data.get('mail_receptacleNo'),
+                data.get('mail_originPost'),
+                data.get('mail_destPost'),
+                data.get('mail_dest'),
+                data.get('mail_recTime'),
+                data.get('mail_upliftTime'),
+                data.get('mail_arriveTime'),
+                data.get('mail_deliverTime'),
+                data.get('mail_routeInfo'),
+                data.get('mail_flightInfo'),
+                data.get('mail_weight'),
+                data.get('mail_quote'),
+                data.get('mail_charge'),
+                data.get('mail_carrCode')
+            ))
+            
+            connection.commit()
+            return jsonify({'success': True, 'message': '邮件数据添加成功'})
+        else:
+            return jsonify({'success': False, 'message': '数据库连接失败'})
+            
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'添加失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if 'connection' in locals() and connection:
+            connection.close()
+
+# 更新邮件数据API
+@app.route('/api/mail_data/<int:mail_id>', methods=['PUT'])
+def update_mail_data(mail_id):
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        data = request.get_json()
+        
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor()
+            
+            update_query = """
+                UPDATE mail_data SET 
+                    mail_receptacleNo = %s, mail_originPost = %s, mail_destPost = %s,
+                    mail_dest = %s, mail_recTime = %s, mail_upliftTime = %s,
+                    mail_arriveTime = %s, mail_deliverTime = %s, mail_routeInfo = %s,
+                    mail_flightInfo = %s, mail_weight = %s, mail_quote = %s,
+                    mail_charge = %s, mail_carrCode = %s
+                WHERE mail_id = %s
+            """
+            
+            cursor.execute(update_query, (
+                data.get('mail_receptacleNo'),
+                data.get('mail_originPost'),
+                data.get('mail_destPost'),
+                data.get('mail_dest'),
+                data.get('mail_recTime'),
+                data.get('mail_upliftTime'),
+                data.get('mail_arriveTime'),
+                data.get('mail_deliverTime'),
+                data.get('mail_routeInfo'),
+                data.get('mail_flightInfo'),
+                data.get('mail_weight'),
+                data.get('mail_quote'),
+                data.get('mail_charge'),
+                data.get('mail_carrCode'),
+                mail_id
+            ))
+            
+            connection.commit()
+            return jsonify({'success': True, 'message': '邮件数据更新成功'})
+        else:
+            return jsonify({'success': False, 'message': '数据库连接失败'})
+            
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'更新失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if 'connection' in locals() and connection:
+            connection.close()
+
+# 删除邮件数据API
+@app.route('/api/mail_data/<int:mail_id>', methods=['DELETE'])
+def delete_mail_data(mail_id):
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor()
+            
+            cursor.execute("DELETE FROM mail_data WHERE mail_id = %s", (mail_id,))
+            connection.commit()
+            
+            if cursor.rowcount > 0:
+                return jsonify({'success': True, 'message': '邮件数据删除成功'})
+            else:
+                return jsonify({'success': False, 'message': '未找到要删除的数据'})
+        else:
+            return jsonify({'success': False, 'message': '数据库连接失败'})
+            
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'删除失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if 'connection' in locals() and connection:
+            connection.close()
+
 @app.route('/logout')
 def logout():
     """退出登录"""
@@ -1389,11 +1804,36 @@ def init_bill_info_table():
             
             cursor.execute(create_products_table)
             
+            # 创建邮件数据表
+            create_mail_data_table = """
+            CREATE TABLE IF NOT EXISTS mail_data (
+                mail_id INT AUTO_INCREMENT PRIMARY KEY,
+                mail_receptacleNo VARCHAR(100) NOT NULL COMMENT '总包号',
+                mail_originPost VARCHAR(200) NOT NULL COMMENT '始发局',
+                mail_destPost VARCHAR(200) NOT NULL COMMENT '寄达局',
+                mail_dest VARCHAR(200) NOT NULL COMMENT '到达地',
+                mail_recTime DATETIME COMMENT '接收时间',
+                mail_upliftTime DATETIME COMMENT '启运时间',
+                mail_arriveTime DATETIME COMMENT '到达时间',
+                mail_deliverTime DATETIME COMMENT '交邮时间',
+                mail_routeInfo VARCHAR(500) COMMENT '收费路由',
+                mail_flightInfo VARCHAR(200) COMMENT '航班',
+                mail_weight DECIMAL(10,3) COMMENT '重量',
+                mail_quote DECIMAL(10,2) COMMENT '费率',
+                mail_charge DECIMAL(10,2) COMMENT '金额',
+                mail_carrCode VARCHAR(100) COMMENT '运能编码',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """
+            
+            cursor.execute(create_mail_data_table)
+            
             if admin_role_exists == 0:
                 # 插入默认角色
                 insert_roles = """
                 INSERT INTO roles (role_name, permissions) VALUES 
-                ('管理员', 'employees,roles,products,bill_management'),
+                ('管理员', 'dashboard,employees,roles,products,bill_management,mail_data'),
                 ('普通用户', 'bill_management')
                 """
                 cursor.execute(insert_roles)

@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>邮件数据管理 - 中邮账单管理系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- 头部导航 -->
+        <header class="dashboard-header">
+            <div class="header-left"></div>
+            
+            <div class="header-center">
+                <h1>
+                    <i class="fas fa-file-invoice-dollar"></i>
+                    中邮账单管理系统
+                    <small style="display: block; font-size: 14px; font-weight: 300; margin-top: 5px;">China Post Bill Management System</small>
+                </h1>
+            </div>
+            
+            <div class="header-right">
+                <div class="user-info">
+                    <div class="user-dropdown">
+                        <div class="user-button">
+                            <i class="fas fa-user-circle"></i>
+                            <span>{{ username }}</span>
+                        </div>
+                        <div class="dropdown-content">
+                            <a href="#" onclick="showChangePasswordModal(); event.stopPropagation(); return false;">
+                                <i class="fas fa-key"></i>
+                                修改密码
+                            </a>
+                            <a href="{{ url_for('logout') }}">
+                                <i class="fas fa-sign-out-alt"></i>
+                                退出登录
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- 主要布局容器 -->
+        <div class="main-container">
+            <!-- 左侧菜单栏 -->
+            <aside class="sidebar">
+                <nav class="sidebar-nav">
+                    <ul class="nav-menu">
+                        {% if 'dashboard' in permissions %}
+                        <li class="nav-item">
+                            <a href="{{ url_for('dashboard') }}" class="nav-link">
+                                <i class="fas fa-tachometer-alt"></i>
+                                <span>仪表盘</span>
+                            </a>
+                        </li>
+                        {% endif %}
+                        
+                        {% if 'employees' in permissions or 'roles' in permissions or 'products' in permissions %}
+                        <li class="nav-item has-submenu">
+                            <a href="#" class="nav-link" onclick="toggleSubmenu(this)">
+                                <i class="fas fa-database"></i>
+                                <span>基础资料管理</span>
+                                <i class="fas fa-chevron-right submenu-arrow"></i>
+                            </a>
+                            <ul class="submenu">
+                                {% if 'employees' in permissions %}
+                                <li><a href="{{ url_for('employees') }}" class="submenu-link"><i class="fas fa-users"></i>员工管理</a></li>
+                                {% endif %}
+                                {% if 'roles' in permissions %}
+                                <li><a href="{{ url_for('roles') }}" class="submenu-link"><i class="fas fa-user-tag"></i>角色管理</a></li>
+                                {% endif %}
+                                {% if 'products' in permissions %}
+                                <li><a href="{{ url_for('products') }}" class="submenu-link"><i class="fas fa-box"></i>产品信息管理</a></li>
+                                {% endif %}
+                                <li><a href="{{ url_for('bill_info') }}" class="submenu-link"><i class="fas fa-file-invoice"></i>账单信息管理</a></li>
+                            </ul>
+                        </li>
+                        {% endif %}
+                        
+                        {% if 'mail_data' in permissions %}
+                        <li class="nav-item active">
+                            <a href="{{ url_for('mail_data') }}" class="nav-link">
+                                <i class="fas fa-envelope-open-text"></i>
+                                <span>邮件数据管理</span>
+                            </a>
+                        </li>
+                        {% endif %}
+                        
+                        {% if 'bill_management' in permissions %}
+                        <li class="nav-item">
+                            <a href="#" class="nav-link">
+                                <i class="fas fa-calculator"></i>
+                                <span>账单管理</span>
+                            </a>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            </aside>
+
+            <!-- 主内容区域 -->
+            <main class="main-content">
+                <div class="content-header">
+                    <h2><i class="fas fa-envelope"></i> 邮件数据管理</h2>
+                    <div class="header-actions">
+                        <button class="btn btn-primary" onclick="showAddMailDataModal()">
+                            <i class="fas fa-plus"></i> 添加邮件数据
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 搜索和筛选区域 -->
+                <div class="search-section">
+                    <div class="search-form">
+                        <div class="search-group">
+                            <input type="text" id="searchInput" placeholder="搜索总包号、始发局、寄达局..." class="search-input">
+                            <button class="btn btn-secondary" onclick="searchMailData()">
+                                <i class="fas fa-search"></i> 搜索
+                            </button>
+                            <button class="btn btn-outline" onclick="clearSearch()">
+                                <i class="fas fa-times"></i> 清空
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 邮件数据列表 -->
+                <div class="employee-list bill-list">
+                    <table class="employee-table">
+                        <thead>
+                            <tr>
+                                <th>序号</th>
+                                <th>总包号</th>
+                                <th>始发局</th>
+                                <th>寄达局</th>
+                                <th>到达地</th>
+                                <th>接收时间</th>
+                                <th>启运时间</th>
+                                <th>到达时间</th>
+                                <th>交邮时间</th>
+                                <th>收费路由</th>
+                                <th>航班</th>
+                                <th>重量</th>
+                                <th>费率</th>
+                                <th>金额</th>
+                                <th>运能编码</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mailDataTableBody">
+                            <!-- 数据通过JavaScript动态加载 -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 分页导航 -->
+                <div class="pagination-container">
+                    <div class="pagination-info">
+                        <span id="paginationInfo">显示第 1-15 条，共 0 条记录</span>
+                    </div>
+                    <div class="pagination-controls">
+                        <button class="btn btn-outline" id="firstPageBtn" onclick="goToPage(1)">
+                            <i class="fas fa-angle-double-left"></i> 首页
+                        </button>
+                        <button class="btn btn-outline" id="prevPageBtn" onclick="previousPage()">
+                            <i class="fas fa-angle-left"></i> 上一页
+                        </button>
+                        <div class="page-numbers" id="pageNumbers">
+                            <!-- 页码通过JavaScript生成 -->
+                        </div>
+                        <button class="btn btn-outline" id="nextPageBtn" onclick="nextPage()">
+                            下一页 <i class="fas fa-angle-right"></i>
+                        </button>
+                        <button class="btn btn-outline" id="lastPageBtn" onclick="goToPage(totalPages)">
+                            末页 <i class="fas fa-angle-double-right"></i>
+                        </button>
+                    </div>
+                    <div class="pagination-size">
+                        <label for="pageSizeSelect">每页显示：</label>
+                        <select id="pageSizeSelect" onchange="changePageSize()">
+                            <option value="15">15条</option>
+                            <option value="30">30条</option>
+                            <option value="50">50条</option>
+                            <option value="100">100条</option>
+                        </select>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- 添加邮件数据模态框 -->
+    <div id="addMailDataModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-plus"></i> 添加邮件数据</h3>
+                <span class="close" onclick="closeAddMailDataModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="addMailDataForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="addReceptacleNo">总包号 <span class="required">*</span></label>
+                            <input type="text" id="addReceptacleNo" name="mail_receptacleNo" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="addOriginPost">始发局 <span class="required">*</span></label>
+                            <input type="text" id="addOriginPost" name="mail_originPost" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="addDestPost">寄达局 <span class="required">*</span></label>
+                            <input type="text" id="addDestPost" name="mail_destPost" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="addDest">到达地 <span class="required">*</span></label>
+                            <input type="text" id="addDest" name="mail_dest" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="addRecTime">接收时间</label>
+                            <input type="datetime-local" id="addRecTime" name="mail_recTime">
+                        </div>
+                        <div class="form-group">
+                            <label for="addUpliftTime">启运时间</label>
+                            <input type="datetime-local" id="addUpliftTime" name="mail_upliftTime">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="addArriveTime">到达时间</label>
+                            <input type="datetime-local" id="addArriveTime" name="mail_arriveTime">
+                        </div>
+                        <div class="form-group">
+                            <label for="addDeliverTime">交邮时间</label>
+                            <input type="datetime-local" id="addDeliverTime" name="mail_deliverTime">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="addRouteInfo">收费路由</label>
+                            <input type="text" id="addRouteInfo" name="mail_routeInfo">
+                        </div>
+                        <div class="form-group">
+                            <label for="addFlightInfo">航班</label>
+                            <input type="text" id="addFlightInfo" name="mail_flightInfo">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="addWeight">重量</label>
+                            <input type="number" id="addWeight" name="mail_weight" step="0.001" min="0">
+                        </div>
+                        <div class="form-group">
+                            <label for="addQuote">费率</label>
+                            <input type="number" id="addQuote" name="mail_quote" step="0.01" min="0">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="addCharge">金额</label>
+                            <input type="number" id="addCharge" name="mail_charge" step="0.01" min="0">
+                        </div>
+                        <div class="form-group">
+                            <label for="addCarrCode">运能编码</label>
+                            <input type="text" id="addCarrCode" name="mail_carrCode">
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeAddMailDataModal()">取消</button>
+                <button type="button" class="btn btn-primary" onclick="addMailData()">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑邮件数据模态框 -->
+    <div id="editMailDataModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-edit"></i> 编辑邮件数据</h3>
+                <span class="close" onclick="closeEditMailDataModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="editMailDataForm">
+                    <input type="hidden" id="editMailId" name="mail_id">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="editReceptacleNo">总包号 <span class="required">*</span></label>
+                            <input type="text" id="editReceptacleNo" name="mail_receptacleNo" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="editOriginPost">始发局 <span class="required">*</span></label>
+                            <input type="text" id="editOriginPost" name="mail_originPost" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="editDestPost">寄达局 <span class="required">*</span></label>
+                            <input type="text" id="editDestPost" name="mail_destPost" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="editDest">到达地 <span class="required">*</span></label>
+                            <input type="text" id="editDest" name="mail_dest" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="editRecTime">接收时间</label>
+                            <input type="datetime-local" id="editRecTime" name="mail_recTime">
+                        </div>
+                        <div class="form-group">
+                            <label for="editUpliftTime">启运时间</label>
+                            <input type="datetime-local" id="editUpliftTime" name="mail_upliftTime">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="editArriveTime">到达时间</label>
+                            <input type="datetime-local" id="editArriveTime" name="mail_arriveTime">
+                        </div>
+                        <div class="form-group">
+                            <label for="editDeliverTime">交邮时间</label>
+                            <input type="datetime-local" id="editDeliverTime" name="mail_deliverTime">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="editRouteInfo">收费路由</label>
+                            <input type="text" id="editRouteInfo" name="mail_routeInfo">
+                        </div>
+                        <div class="form-group">
+                            <label for="editFlightInfo">航班</label>
+                            <input type="text" id="editFlightInfo" name="mail_flightInfo">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="editWeight">重量</label>
+                            <input type="number" id="editWeight" name="mail_weight" step="0.001" min="0">
+                        </div>
+                        <div class="form-group">
+                            <label for="editQuote">费率</label>
+                            <input type="number" id="editQuote" name="mail_quote" step="0.01" min="0">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="editCharge">金额</label>
+                            <input type="number" id="editCharge" name="mail_charge" step="0.01" min="0">
+                        </div>
+                        <div class="form-group">
+                            <label for="editCarrCode">运能编码</label>
+                            <input type="text" id="editCarrCode" name="mail_carrCode">
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeEditMailDataModal()">取消</button>
+                <button type="button" class="btn btn-primary" onclick="updateMailData()">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 修改密码模态框 -->
+    <div id="changePasswordModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-key"></i> 修改密码</h3>
+                <span class="close" onclick="closeChangePasswordModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="changePasswordForm">
+                    <div class="form-group">
+                        <label for="currentPassword">当前密码 <span class="required">*</span></label>
+                        <input type="password" id="currentPassword" name="current_password" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="newPassword">新密码 <span class="required">*</span></label>
+                        <input type="password" id="newPassword" name="new_password" required minlength="6">
+                        <small class="form-text">密码长度至少6位</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="confirmPassword">确认新密码 <span class="required">*</span></label>
+                        <input type="password" id="confirmPassword" name="confirm_password" required minlength="6">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeChangePasswordModal()">取消</button>
+                <button type="button" class="btn btn-primary" onclick="changePassword()">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let currentPage = 1;
+        let totalPages = 1;
+        let pageSize = 15;
+        let totalRecords = 0;
+        let searchKeyword = '';
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 检查菜单状态
+            checkMenuState();
+            // 加载邮件数据
+            loadMailData();
+        });
+
+        // 检查菜单状态
+        function checkMenuState() {
+            const sidebar = document.querySelector('.sidebar');
+            const mainContent = document.querySelector('.main-content');
+            
+            if (localStorage.getItem('sidebarCollapsed') === 'true') {
+                sidebar.classList.add('collapsed');
+                mainContent.classList.add('expanded');
+            }
+        }
+
+        // 加载邮件数据
+        function loadMailData(page = 1) {
+            currentPage = page;
+            
+            const params = new URLSearchParams({
+                page: page,
+                per_page: pageSize
+            });
+            
+            if (searchKeyword) {
+                params.append('search', searchKeyword);
+            }
+            
+            fetch(`/api/mail_data?${params}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        updateMailDataDisplay(data.data);
+                        updateMailDataPagination(data);
+                    } else {
+                        showMessage('获取邮件数据失败: ' + data.message, 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showMessage('网络错误，请稍后重试', 'error');
+                });
+        }
+
+        // 更新邮件数据显示
+        function updateMailDataDisplay(mailData) {
+            const tbody = document.getElementById('mailDataTableBody');
+            tbody.innerHTML = '';
+            
+            if (mailData.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="16" class="text-center">暂无数据</td></tr>';
+                return;
+            }
+            
+            mailData.forEach((item, index) => {
+                const row = document.createElement('tr');
+                const serialNumber = (currentPage - 1) * pageSize + index + 1;
+                
+                row.innerHTML = `
+                    <td>${serialNumber}</td>
+                    <td>${item.mail_receptacleNo || ''}</td>
+                    <td>${item.mail_originPost || ''}</td>
+                    <td>${item.mail_destPost || ''}</td>
+                    <td>${item.mail_dest || ''}</td>
+                    <td>${formatDateTime(item.mail_recTime)}</td>
+                    <td>${formatDateTime(item.mail_upliftTime)}</td>
+                    <td>${formatDateTime(item.mail_arriveTime)}</td>
+                    <td>${formatDateTime(item.mail_deliverTime)}</td>
+                    <td>${item.mail_routeInfo || ''}</td>
+                    <td>${item.mail_flightInfo || ''}</td>
+                    <td>${item.mail_weight || ''}</td>
+                    <td>${item.mail_quote || ''}</td>
+                    <td>${item.mail_charge || ''}</td>
+                    <td>${item.mail_carrCode || ''}</td>
+                    <td class="table-actions">
+                        <button class="btn btn-sm btn-primary" onclick="editMailData(${item.mail_id})" title="编辑">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteMailData(${item.mail_id})" title="删除">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                `;
+                
+                tbody.appendChild(row);
+            });
+        }
+
+        // 更新分页信息
+        function updateMailDataPagination(data) {
+            totalPages = data.total_pages;
+            totalRecords = data.total;
+            currentPage = data.page;
+            
+            // 更新分页信息显示
+            const start = (currentPage - 1) * pageSize + 1;
+            const end = Math.min(currentPage * pageSize, totalRecords);
+            document.getElementById('paginationInfo').textContent = 
+                `显示第 ${start}-${end} 条，共 ${totalRecords} 条记录`;
+            
+            // 更新按钮状态
+            document.getElementById('firstPageBtn').disabled = currentPage === 1;
+            document.getElementById('prevPageBtn').disabled = currentPage === 1;
+            document.getElementById('nextPageBtn').disabled = currentPage === totalPages;
+            document.getElementById('lastPageBtn').disabled = currentPage === totalPages;
+            
+            // 生成页码
+            generatePageNumbers();
+        }
+
+        // 生成页码
+        function generatePageNumbers() {
+            const pageNumbers = document.getElementById('pageNumbers');
+            pageNumbers.innerHTML = '';
+            
+            const maxVisiblePages = 5;
+            let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+            let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+            
+            if (endPage - startPage + 1 < maxVisiblePages) {
+                startPage = Math.max(1, endPage - maxVisiblePages + 1);
+            }
+            
+            for (let i = startPage; i <= endPage; i++) {
+                const pageBtn = document.createElement('button');
+                pageBtn.className = `btn ${i === currentPage ? 'btn-primary' : 'btn-outline'}`;
+                pageBtn.textContent = i;
+                pageBtn.onclick = () => goToPage(i);
+                pageNumbers.appendChild(pageBtn);
+            }
+        }
+
+        // 分页控制函数
+        function goToPage(page) {
+            if (page >= 1 && page <= totalPages && page !== currentPage) {
+                loadMailData(page);
+            }
+        }
+
+        function previousPage() {
+            if (currentPage > 1) {
+                loadMailData(currentPage - 1);
+            }
+        }
+
+        function nextPage() {
+            if (currentPage < totalPages) {
+                loadMailData(currentPage + 1);
+            }
+        }
+
+        // 改变每页显示条数
+        function changePageSize() {
+            pageSize = parseInt(document.getElementById('pageSizeSelect').value);
+            loadMailData(1);
+        }
+
+        // 搜索功能
+        function searchMailData() {
+            searchKeyword = document.getElementById('searchInput').value.trim();
+            loadMailData(1);
+        }
+
+        function clearSearch() {
+            document.getElementById('searchInput').value = '';
+            searchKeyword = '';
+            loadMailData(1);
+        }
+
+        // 格式化日期时间
+        function formatDateTime(dateTimeStr) {
+            if (!dateTimeStr) return '';
+            const date = new Date(dateTimeStr);
+            return date.toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // 显示添加邮件数据模态框
+        function showAddMailDataModal() {
+            document.getElementById('addMailDataModal').style.display = 'block';
+        }
+
+        // 关闭添加邮件数据模态框
+        function closeAddMailDataModal() {
+            document.getElementById('addMailDataModal').style.display = 'none';
+            document.getElementById('addMailDataForm').reset();
+        }
+
+        // 添加邮件数据
+        function addMailData() {
+            const form = document.getElementById('addMailDataForm');
+            const formData = new FormData(form);
+            const data = Object.fromEntries(formData.entries());
+            
+            // 验证必填字段
+            if (!data.mail_receptacleNo || !data.mail_originPost || !data.mail_destPost || !data.mail_dest) {
+                showMessage('请填写所有必填字段', 'error');
+                return;
+            }
+            
+            fetch('/api/mail_data', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    showMessage(result.message, 'success');
+                    closeAddMailDataModal();
+                    loadMailData(currentPage);
+                } else {
+                    showMessage(result.message, 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showMessage('网络错误，请稍后重试', 'error');
+            });
+        }
+
+        // 编辑邮件数据
+        function editMailData(mailId) {
+            // 获取邮件数据详情
+            fetch(`/api/mail_data?page=1&per_page=1000`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const mailData = data.data.find(item => item.mail_id === mailId);
+                        if (mailData) {
+                            // 填充编辑表单
+                            document.getElementById('editMailId').value = mailData.mail_id;
+                            document.getElementById('editReceptacleNo').value = mailData.mail_receptacleNo || '';
+                            document.getElementById('editOriginPost').value = mailData.mail_originPost || '';
+                            document.getElementById('editDestPost').value = mailData.mail_destPost || '';
+                            document.getElementById('editDest').value = mailData.mail_dest || '';
+                            document.getElementById('editRecTime').value = formatDateTimeForInput(mailData.mail_recTime);
+                            document.getElementById('editUpliftTime').value = formatDateTimeForInput(mailData.mail_upliftTime);
+                            document.getElementById('editArriveTime').value = formatDateTimeForInput(mailData.mail_arriveTime);
+                            document.getElementById('editDeliverTime').value = formatDateTimeForInput(mailData.mail_deliverTime);
+                            document.getElementById('editRouteInfo').value = mailData.mail_routeInfo || '';
+                            document.getElementById('editFlightInfo').value = mailData.mail_flightInfo || '';
+                            document.getElementById('editWeight').value = mailData.mail_weight || '';
+                            document.getElementById('editQuote').value = mailData.mail_quote || '';
+                            document.getElementById('editCharge').value = mailData.mail_charge || '';
+                            document.getElementById('editCarrCode').value = mailData.mail_carrCode || '';
+                            
+                            // 显示编辑模态框
+                            document.getElementById('editMailDataModal').style.display = 'block';
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showMessage('获取邮件数据失败', 'error');
+                });
+        }
+
+        // 关闭编辑邮件数据模态框
+        function closeEditMailDataModal() {
+            document.getElementById('editMailDataModal').style.display = 'none';
+            document.getElementById('editMailDataForm').reset();
+        }
+
+        // 更新邮件数据
+        function updateMailData() {
+            const form = document.getElementById('editMailDataForm');
+            const formData = new FormData(form);
+            const data = Object.fromEntries(formData.entries());
+            const mailId = data.mail_id;
+            
+            // 验证必填字段
+            if (!data.mail_receptacleNo || !data.mail_originPost || !data.mail_destPost || !data.mail_dest) {
+                showMessage('请填写所有必填字段', 'error');
+                return;
+            }
+            
+            fetch(`/api/mail_data/${mailId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    showMessage(result.message, 'success');
+                    closeEditMailDataModal();
+                    loadMailData(currentPage);
+                } else {
+                    showMessage(result.message, 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showMessage('网络错误，请稍后重试', 'error');
+            });
+        }
+
+        // 删除邮件数据
+        function deleteMailData(mailId) {
+            if (confirm('确定要删除这条邮件数据吗？此操作不可恢复。')) {
+                fetch(`/api/mail_data/${mailId}`, {
+                    method: 'DELETE'
+                })
+                .then(response => response.json())
+                .then(result => {
+                    if (result.success) {
+                        showMessage(result.message, 'success');
+                        loadMailData(currentPage);
+                    } else {
+                        showMessage(result.message, 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showMessage('网络错误，请稍后重试', 'error');
+                });
+            }
+        }
+
+        // 格式化日期时间为输入框格式
+        function formatDateTimeForInput(dateTimeStr) {
+            if (!dateTimeStr) return '';
+            const date = new Date(dateTimeStr);
+            return date.toISOString().slice(0, 16);
+        }
+
+        // 显示修改密码模态框
+        function showChangePasswordModal() {
+            document.getElementById('changePasswordModal').style.display = 'block';
+        }
+
+        // 关闭修改密码模态框
+        function closeChangePasswordModal() {
+            document.getElementById('changePasswordModal').style.display = 'none';
+            document.getElementById('changePasswordForm').reset();
+        }
+
+        // 修改密码
+        function changePassword() {
+            const form = document.getElementById('changePasswordForm');
+            const formData = new FormData(form);
+            const data = Object.fromEntries(formData.entries());
+            
+            // 验证新密码和确认密码是否一致
+            if (data.new_password !== data.confirm_password) {
+                showMessage('新密码和确认密码不一致', 'error');
+                return;
+            }
+            
+            // 验证密码长度
+            if (data.new_password.length < 6) {
+                showMessage('新密码长度至少6位', 'error');
+                return;
+            }
+            
+            fetch('/change_password', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    current_password: data.current_password,
+                    new_password: data.new_password
+                })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    showMessage(result.message, 'success');
+                    closeChangePasswordModal();
+                } else {
+                    showMessage(result.message, 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showMessage('网络错误，请稍后重试', 'error');
+            });
+        }
+
+        // 子菜单切换功能
+        function toggleSubmenu(element) {
+            const submenu = element.nextElementSibling;
+            const arrow = element.querySelector('.submenu-arrow');
+            const parentLi = element.parentElement;
+            
+            // 切换子菜单显示状态
+            if (submenu.style.maxHeight && submenu.style.maxHeight !== '0px') {
+                submenu.style.maxHeight = '0px';
+                arrow.style.transform = 'rotate(0deg)';
+                parentLi.classList.remove('active');
+            } else {
+                // 先关闭其他子菜单
+                document.querySelectorAll('.submenu').forEach(menu => {
+                    menu.style.maxHeight = '0px';
+                });
+                document.querySelectorAll('.submenu-arrow').forEach(arr => {
+                    arr.style.transform = 'rotate(0deg)';
+                });
+                document.querySelectorAll('.has-submenu').forEach(item => {
+                    item.classList.remove('active');
+                });
+                
+                // 显示当前子菜单
+                submenu.style.maxHeight = submenu.scrollHeight + 'px';
+                arrow.style.transform = 'rotate(90deg)';
+                parentLi.classList.add('active');
+            }
+        }
+
+        // 显示消息
+        function showMessage(message, type = 'info') {
+            // 创建消息元素
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message message-${type}`;
+            messageDiv.textContent = message;
+            
+            // 添加到页面
+            document.body.appendChild(messageDiv);
+            
+            // 显示动画
+            setTimeout(() => {
+                messageDiv.classList.add('show');
+            }, 100);
+            
+            // 自动隐藏
+            setTimeout(() => {
+                messageDiv.classList.remove('show');
+                setTimeout(() => {
+                    document.body.removeChild(messageDiv);
+                }, 300);
+            }, 3000);
+        }
+
+        // 用户下拉菜单交互
+        // 用户下拉菜单功能
+        const userDropdown = document.querySelector('.user-dropdown');
+        const userButton = document.querySelector('.user-button');
+        const dropdownContent = document.querySelector('.dropdown-content');
+        
+        if (userDropdown && userButton && dropdownContent) {
+            let isDropdownOpen = false;
+            
+            // 点击用户按钮切换下拉菜单
+            userButton.addEventListener('click', function(e) {
+                e.stopPropagation();
+                isDropdownOpen = !isDropdownOpen;
+                dropdownContent.classList.toggle('show', isDropdownOpen);
+            });
+            
+            // 悬停显示下拉菜单
+            userDropdown.addEventListener('mouseenter', function() {
+                if (!isDropdownOpen) {
+                    isDropdownOpen = true;
+                    dropdownContent.classList.add('show');
+                }
+            });
+            
+            // 鼠标进入下拉内容时保持显示
+            dropdownContent.addEventListener('mouseenter', function() {
+                // 保持显示状态
+            });
+            
+            // 鼠标离开用户区域时隐藏（延迟处理以允许鼠标移动到下拉内容）
+            userDropdown.addEventListener('mouseleave', function(e) {
+                // 检查鼠标是否移动到下拉内容区域
+                setTimeout(() => {
+                    if (!userDropdown.matches(':hover') && !dropdownContent.matches(':hover')) {
+                        isDropdownOpen = false;
+                        dropdownContent.classList.remove('show');
+                    }
+                }, 100);
+            });
+            
+            // 鼠标离开下拉内容时隐藏
+            dropdownContent.addEventListener('mouseleave', function() {
+                setTimeout(() => {
+                    if (!userDropdown.matches(':hover') && !dropdownContent.matches(':hover')) {
+                        isDropdownOpen = false;
+                        dropdownContent.classList.remove('show');
+                    }
+                }, 100);
+            });
+            
+            // 点击页面其他地方时隐藏下拉菜单
+            document.addEventListener('click', function(e) {
+                if (!userDropdown.contains(e.target)) {
+                    isDropdownOpen = false;
+                    dropdownContent.classList.remove('show');
+                }
+            });
+        }
+
+        // 点击模态框外部关闭
+        window.onclick = function(event) {
+            const modals = document.querySelectorAll('.modal');
+            modals.forEach(modal => {
+                if (event.target === modal) {
+                    modal.style.display = 'none';
+                }
+            });
+        }
+    </script>
+</body>
+</html>
