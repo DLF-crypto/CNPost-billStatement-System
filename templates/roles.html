@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>角色管理 - 中邮账单管理系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- 头部导航 -->
+        <header class="dashboard-header">
+            <div class="header-left"></div>
+            
+            <div class="header-center">
+                <h1>
+                    <i class="fas fa-file-invoice-dollar"></i>
+                    中邮账单管理系统
+                    <small style="display: block; font-size: 14px; font-weight: 300; margin-top: 5px;">China Post Bill Management System</small>
+                </h1>
+            </div>
+            
+            <div class="header-right">
+                <div class="user-info">
+                    <div class="user-dropdown">
+                        <div class="user-button">
+                            <i class="fas fa-user-circle"></i>
+                            <span>{{ username }}</span>
+                        </div>
+                        <div class="dropdown-content">
+                            <a href="#" onclick="showChangePasswordModal(); event.stopPropagation(); return false;">
+                                <i class="fas fa-key"></i>
+                                修改密码
+                            </a>
+                            <a href="{{ url_for('logout') }}">
+                                <i class="fas fa-sign-out-alt"></i>
+                                退出登录
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- 主要布局容器 -->
+        <div class="main-container">
+            <!-- 左侧菜单栏 -->
+            <aside class="sidebar">
+                <nav class="sidebar-nav">
+                    <ul class="nav-menu">
+                        {% if 'dashboard' in permissions %}
+                        <li class="nav-item">
+                            <a href="{{ url_for('dashboard') }}" class="nav-link">
+                                <i class="fas fa-tachometer-alt"></i>
+                                <span>仪表盘</span>
+                            </a>
+                        </li>
+                        {% endif %}
+                        
+                        {% if 'employees' in permissions or 'roles' in permissions %}
+                        <li class="nav-item has-submenu active">
+                            <a href="#" class="nav-link" onclick="toggleSubmenu(this)">
+                                <i class="fas fa-database"></i>
+                                <span>基础资料管理</span>
+                                <i class="fas fa-chevron-right submenu-arrow"></i>
+                            </a>
+                            <ul class="submenu" style="display: block;">
+                                {% if 'employees' in permissions %}
+                                <li><a href="{{ url_for('employees') }}" class="submenu-link"><i class="fas fa-users"></i>员工管理</a></li>
+                                {% endif %}
+                                {% if 'roles' in permissions %}
+                                <li><a href="{{ url_for('roles') }}" class="submenu-link active"><i class="fas fa-user-tag"></i>角色管理</a></li>
+                                {% endif %}
+                                <li><a href="{{ url_for('bill_info') }}" class="submenu-link"><i class="fas fa-file-invoice"></i>账单信息管理</a></li>
+                            </ul>
+                        </li>
+                        {% endif %}
+                        
+                        {% if 'mail_data' in permissions %}
+                        <li class="nav-item">
+                            <a href="#" class="nav-link">
+                                <i class="fas fa-envelope-open-text"></i>
+                                <span>邮件数据管理</span>
+                            </a>
+                        </li>
+                        {% endif %}
+                        
+                        {% if 'bill_management' in permissions %}
+                        <li class="nav-item">
+                            <a href="#" class="nav-link">
+                                <i class="fas fa-calculator"></i>
+                                <span>账单管理</span>
+                            </a>
+                        </li>
+                        {% endif %}
+                        
+                        {% if 'reports' in permissions %}
+                        <li class="nav-item">
+                            <a href="#" class="nav-link">
+                                <i class="fas fa-chart-bar"></i>
+                                <span>分析报表</span>
+                            </a>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            </aside>
+
+            <!-- 主要内容 -->
+            <main class="main-content">
+                <!-- 显示消息 -->
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ category }}">
+                                <i class="fas fa-{{ 'check-circle' if category == 'success' else 'exclamation-triangle' if category == 'error' else 'info-circle' }}"></i>
+                                {{ message }}
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+                
+                <div class="content-header">
+                    <h2><i class="fas fa-user-tag"></i>角色管理</h2>
+                    <button class="btn btn-primary" onclick="showAddRoleModal()">
+                        <i class="fas fa-plus"></i>
+                        添加角色
+                    </button>
+                </div>
+
+                <!-- 角色列表 -->
+                <div class="role-list">
+                    <div class="table-container">
+                        <table class="role-table">
+                            <thead>
+                                <tr>
+                                    <th>角色ID</th>
+                                    <th>角色名称</th>
+                                    <th>权限</th>
+                                    <th>创建时间</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for role in roles %}
+                                <tr>
+                                    <td>{{ role.id }}</td>
+                                    <td>{{ role.role_name }}</td>
+                                    <td>
+                                        <div class="permissions-display">
+                                            {% if role.permissions %}
+                                                {% set permission_names = {
+                                                    'dashboard': '仪表盘',
+                                                    'employees': '员工管理', 
+                                                    'roles': '角色管理',
+                                                    'mail_data': '邮件数据管理',
+                                                    'bill_management': '账单管理',
+                                                    'reports': '分析报表'
+                                                } %}
+                                                {% for perm in role.permissions.split(',') %}
+                                                    <span class="permission-tag">{{ permission_names.get(perm.strip(), perm.strip()) }}</span>
+                                                {% endfor %}
+                                            {% else %}
+                                                <span class="no-permissions">无权限</span>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                    <td>{{ role.created_at.strftime('%Y-%m-%d %H:%M') if role.created_at else '' }}</td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            <button class="btn btn-sm btn-edit" onclick="editRole({{ role.id }}, '{{ role.role_name }}', '{{ role.permissions or '' }}')">
+                                                <i class="fas fa-edit"></i>
+                                                编辑
+                                            </button>
+                                            <button class="btn btn-sm btn-delete" onclick="deleteRole({{ role.id }}, '{{ role.role_name }}')">
+                                                <i class="fas fa-trash"></i>
+                                                删除
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- 添加角色模态框 -->
+    <div id="addRoleModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-plus"></i>添加角色</h3>
+                <span class="close" onclick="closeModal('addRoleModal')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="addRoleForm">
+                    <div class="form-group">
+                        <label for="roleName">角色名称 <span class="required">*</span></label>
+                        <input type="text" id="roleName" name="roleName" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>角色权限</label>
+                        <div class="permissions-grid">
+                            <label class="permission-item">
+                                <input type="checkbox" name="permissions" value="dashboard">
+                                <span>仪表盘</span>
+                            </label>
+                            <label class="permission-item">
+                                <input type="checkbox" name="permissions" value="employees">
+                                <span>员工管理</span>
+                            </label>
+                            <label class="permission-item">
+                                <input type="checkbox" name="permissions" value="roles">
+                                <span>角色管理</span>
+                            </label>
+                            <label class="permission-item">
+                                <input type="checkbox" name="permissions" value="mail_data">
+                                <span>邮件数据管理</span>
+                            </label>
+                            <label class="permission-item">
+                                <input type="checkbox" name="permissions" value="bill_management">
+                                <span>账单管理</span>
+                            </label>
+                            <label class="permission-item">
+                                <input type="checkbox" name="permissions" value="reports">
+                                <span>分析报表</span>
+                            </label>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('addRoleModal')">取消</button>
+                <button type="button" class="btn btn-primary" onclick="addRole()">添加</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑角色模态框 -->
+    <div id="editRoleModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-edit"></i>编辑角色</h3>
+                <span class="close" onclick="closeModal('editRoleModal')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="editRoleForm">
+                    <input type="hidden" id="editRoleId">
+                    <div class="form-group">
+                        <label for="editRoleName">角色名称 <span class="required">*</span></label>
+                        <input type="text" id="editRoleName" name="editRoleName" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>角色权限</label>
+                        <div class="permissions-grid">
+                            <label class="permission-item">
+                                <input type="checkbox" name="editPermissions" value="dashboard">
+                                <span>仪表盘</span>
+                            </label>
+                            <label class="permission-item">
+                                <input type="checkbox" name="editPermissions" value="employees">
+                                <span>员工管理</span>
+                            </label>
+                            <label class="permission-item">
+                                <input type="checkbox" name="editPermissions" value="roles">
+                                <span>角色管理</span>
+                            </label>
+                            <label class="permission-item">
+                                <input type="checkbox" name="editPermissions" value="mail_data">
+                                <span>邮件数据管理</span>
+                            </label>
+                            <label class="permission-item">
+                                <input type="checkbox" name="editPermissions" value="bill_management">
+                                <span>账单管理</span>
+                            </label>
+                            <label class="permission-item">
+                                <input type="checkbox" name="editPermissions" value="reports">
+                                <span>分析报表</span>
+                            </label>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('editRoleModal')">取消</button>
+                <button type="button" class="btn btn-primary" onclick="updateRole()">更新</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 修改密码模态框 -->
+    <div id="changePasswordModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-key"></i>修改密码</h3>
+                <span class="close" onclick="closeModal('changePasswordModal')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="changePasswordForm">
+                    <div class="form-group">
+                        <label for="currentPassword">当前密码</label>
+                        <input type="password" id="currentPassword" name="currentPassword" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="newPassword">新密码</label>
+                        <input type="password" id="newPassword" name="newPassword" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="confirmPassword">确认新密码</label>
+                        <input type="password" id="confirmPassword" name="confirmPassword" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('changePasswordModal')">取消</button>
+                <button type="button" class="btn btn-primary" onclick="changePassword()">确认修改</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 菜单展开/收起功能
+        function toggleSubmenu(element) {
+            const submenu = element.nextElementSibling;
+            const arrow = element.querySelector('.submenu-arrow');
+            
+            if (submenu.style.maxHeight === '0px' || submenu.style.maxHeight === '') {
+                submenu.style.maxHeight = submenu.scrollHeight + 'px';
+                if (arrow) {
+                    arrow.classList.remove('fa-chevron-right');
+                    arrow.classList.add('fa-chevron-down');
+                }
+            } else {
+                submenu.style.maxHeight = '0px';
+                if (arrow) {
+                    arrow.classList.remove('fa-chevron-down');
+                    arrow.classList.add('fa-chevron-right');
+                }
+            }
+        }
+
+        // 显示添加角色模态框
+        function showAddRoleModal() {
+            document.getElementById('addRoleModal').style.display = 'block';
+        }
+
+        // 关闭模态框
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+            // 清空表单
+            if (modalId === 'addRoleModal') {
+                document.getElementById('addRoleForm').reset();
+            } else if (modalId === 'editRoleModal') {
+                document.getElementById('editRoleForm').reset();
+            } else if (modalId === 'changePasswordModal') {
+                document.getElementById('changePasswordForm').reset();
+            }
+        }
+
+        // 添加角色
+        function addRole() {
+            const roleName = document.getElementById('roleName').value.trim();
+            const permissions = Array.from(document.querySelectorAll('input[name="permissions"]:checked')).map(cb => cb.value);
+            
+            if (!roleName) {
+                alert('请输入角色名称');
+                return;
+            }
+            
+            fetch('/add_role', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    role_name: roleName,
+                    permissions: permissions
+                })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    alert(result.message);
+                    closeModal('addRoleModal');
+                    location.reload();
+                } else {
+                    alert('错误：' + result.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('操作失败，请稍后重试');
+            });
+        }
+
+        // 编辑角色
+        function editRole(roleId, roleName, permissions) {
+            document.getElementById('editRoleId').value = roleId;
+            document.getElementById('editRoleName').value = roleName;
+            
+            // 清除所有权限选择
+            document.querySelectorAll('input[name="editPermissions"]').forEach(cb => cb.checked = false);
+            
+            // 设置当前权限
+            if (permissions) {
+                const permArray = permissions.split(',');
+                permArray.forEach(perm => {
+                    const checkbox = document.querySelector(`input[name="editPermissions"][value="${perm.trim()}"]`);
+                    if (checkbox) {
+                        checkbox.checked = true;
+                    }
+                });
+            }
+            
+            document.getElementById('editRoleModal').style.display = 'block';
+        }
+
+        // 更新角色
+        function updateRole() {
+            const roleId = document.getElementById('editRoleId').value;
+            const roleName = document.getElementById('editRoleName').value.trim();
+            const permissions = Array.from(document.querySelectorAll('input[name="editPermissions"]:checked')).map(cb => cb.value);
+            
+            if (!roleName) {
+                alert('请输入角色名称');
+                return;
+            }
+            
+            fetch('/update_role', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    role_id: roleId,
+                    role_name: roleName,
+                    permissions: permissions
+                })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    alert(result.message);
+                    closeModal('editRoleModal');
+                    location.reload();
+                } else {
+                    alert('错误：' + result.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('操作失败，请稍后重试');
+            });
+        }
+
+        // 删除角色
+        function deleteRole(roleId, roleName) {
+            if (confirm(`确定要删除角色 "${roleName}" 吗？`)) {
+                fetch('/delete_role', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        role_id: roleId
+                    })
+                })
+                .then(response => response.json())
+                .then(result => {
+                    if (result.success) {
+                        alert(result.message);
+                        location.reload();
+                    } else {
+                        alert('错误：' + result.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('操作失败，请稍后重试');
+                });
+            }
+        }
+
+        // 修改密码
+        function changePassword() {
+            const currentPassword = document.getElementById('currentPassword').value;
+            const newPassword = document.getElementById('newPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            
+            if (!currentPassword || !newPassword || !confirmPassword) {
+                alert('请填写所有密码字段');
+                return;
+            }
+            
+            if (newPassword !== confirmPassword) {
+                alert('新密码和确认密码不一致');
+                return;
+            }
+            
+            if (newPassword.length < 6) {
+                alert('新密码长度至少6位');
+                return;
+            }
+            
+            fetch('/change_password', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    current_password: currentPassword,
+                    new_password: newPassword
+                })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    alert(result.message);
+                    closeModal('changePasswordModal');
+                } else {
+                    alert('错误：' + result.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('操作失败，请稍后重试');
+            });
+        }
+
+        // 显示修改密码模态框
+        function showChangePasswordModal() {
+            document.getElementById('changePasswordModal').style.display = 'block';
+        }
+
+        // 用户下拉菜单交互
+        const userDropdown = document.querySelector('.user-dropdown');
+        const userButton = document.querySelector('.user-button');
+        const dropdownContent = document.querySelector('.dropdown-content');
+        
+        if (userDropdown && userButton && dropdownContent) {
+            let isDropdownOpen = false;
+            let mouseLeaveTimer = null;
+            
+            userButton.addEventListener('click', function(e) {
+                e.stopPropagation();
+                isDropdownOpen = !isDropdownOpen;
+                dropdownContent.classList.toggle('show', isDropdownOpen);
+                if (mouseLeaveTimer) {
+                    clearTimeout(mouseLeaveTimer);
+                    mouseLeaveTimer = null;
+                }
+            });
+            
+            userButton.addEventListener('mouseenter', function() {
+                if (!isDropdownOpen) {
+                    isDropdownOpen = true;
+                    dropdownContent.classList.add('show');
+                }
+                if (mouseLeaveTimer) {
+                    clearTimeout(mouseLeaveTimer);
+                    mouseLeaveTimer = null;
+                }
+            });
+            
+            dropdownContent.addEventListener('mouseenter', function() {
+                if (mouseLeaveTimer) {
+                    clearTimeout(mouseLeaveTimer);
+                    mouseLeaveTimer = null;
+                }
+            });
+            
+            userButton.addEventListener('mouseleave', function() {
+                mouseLeaveTimer = setTimeout(function() {
+                    isDropdownOpen = false;
+                    dropdownContent.classList.remove('show');
+                }, 200);
+            });
+            
+            dropdownContent.addEventListener('mouseleave', function() {
+                mouseLeaveTimer = setTimeout(function() {
+                    isDropdownOpen = false;
+                    dropdownContent.classList.remove('show');
+                }, 200);
+            });
+            
+            document.addEventListener('click', function(e) {
+                if (!userDropdown.contains(e.target)) {
+                    isDropdownOpen = false;
+                    dropdownContent.classList.remove('show');
+                    if (mouseLeaveTimer) {
+                        clearTimeout(mouseLeaveTimer);
+                        mouseLeaveTimer = null;
+                    }
+                }
+            });
+        }
+
+        // 自动隐藏提示消息
+        setTimeout(function() {
+            const alerts = document.querySelectorAll('.alert');
+            alerts.forEach(function(alert) {
+                alert.style.opacity = '0';
+                setTimeout(function() {
+                    alert.remove();
+                }, 300);
+            });
+        }, 3000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>中邮账单管理系统 - 登录</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-header">
+            <div class="logo">
+                <i class="fas fa-envelope"></i>
+                <h1>中邮账单管理系统</h1>
+                <p class="subtitle">CNPost Invoice Management System</p>
+            </div>
+        </div>
+        
+        <div class="login-form-container">
+            <div class="login-form">
+                <h2>系统登录</h2>
+                
+                <!-- 显示消息 -->
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ category }}">
+                                <i class="fas fa-{{ 'check-circle' if category == 'success' else 'exclamation-triangle' if category == 'error' else 'info-circle' }}"></i>
+                                {{ message }}
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+                
+                <form method="POST" action="{{ url_for('login') }}">
+                    <div class="form-group">
+                        <label for="username">
+                            <i class="fas fa-user"></i>
+                            用户名
+                        </label>
+                        <input type="text" id="username" name="username" required 
+                               placeholder="请输入用户名" autocomplete="username">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="password">
+                            <i class="fas fa-lock"></i>
+                            密码
+                        </label>
+                        <input type="password" id="password" name="password" required 
+                               placeholder="请输入密码" autocomplete="current-password">
+                    </div>
+                    
+                    <button type="submit" class="login-btn">
+                        <i class="fas fa-sign-in-alt"></i>
+                        登录系统
+                    </button>
+                </form>
+                
+                <div class="login-info">
+                    <div class="info-item">
+                        <i class="fas fa-info-circle"></i>
+                        <span>默认账号：admin / 密码：123456</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="login-footer">
+            <p class="version">版本 1.0.0</p>
+        </div>
+    </div>
+    
+    <script>
+        // 简单的表单验证
+        document.querySelector('form').addEventListener('submit', function(e) {
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value.trim();
+            
+            if (!username || !password) {
+                e.preventDefault();
+                alert('请填写完整的登录信息！');
+            }
+        });
+        
+        // 自动隐藏提示消息
+        setTimeout(function() {
+            const alerts = document.querySelectorAll('.alert');
+            alerts.forEach(function(alert) {
+                alert.style.opacity = '0';
+                setTimeout(function() {
+                    alert.remove();
+                }, 300);
+            });
+        }, 3000);
+    </script>
+</body>
+</html>
