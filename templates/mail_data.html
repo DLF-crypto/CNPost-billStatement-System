@@ -105,35 +105,79 @@
             <main class="main-content">
                 <div class="content-header">
                     <h2><i class="fas fa-envelope"></i> 邮件数据管理</h2>
-                    <div class="header-actions">
-                        <button class="btn btn-primary" onclick="showAddMailDataModal()">
-                            <i class="fas fa-plus"></i> 添加邮件数据
-                        </button>
-                    </div>
                 </div>
 
                 <!-- 搜索和筛选区域 -->
                 <div class="search-section">
                     <div class="search-form">
-                        <div class="search-group">
-                            <input type="text" id="searchInput" placeholder="搜索总包号、始发局、寄达局..." class="search-input">
-                            <button class="btn btn-secondary" onclick="searchMailData()">
-                                <i class="fas fa-search"></i> 搜索
-                            </button>
-                            <button class="btn btn-outline" onclick="clearSearch()">
-                                <i class="fas fa-times"></i> 清空
-                            </button>
+                        <!-- 第一行：总包号和到达地查询 -->
+                        <div class="search-row">
+                            <div class="search-group">
+                                <label for="receptacleNoInput">总包号查询：</label>
+                                <input type="text" id="receptacleNoInput" placeholder="请输入总包号" class="search-input">
+                            </div>
+                            <div class="search-group">
+                                <label for="destInput">到达地查询：</label>
+                                <input type="text" id="destInput" placeholder="请输入到达地" class="search-input">
+                            </div>
+                        </div>
+                        
+                        <!-- 第二行：时间查询 -->
+                        <div class="search-row">
+                            <div class="search-group">
+                                <label for="timeTypeSelect">时间类型：</label>
+                                <select id="timeTypeSelect" class="search-select">
+                                    <option value="">请选择时间类型</option>
+                                    <option value="recTime">接收时间</option>
+                                    <option value="upliftTime">启运时间</option>
+                                    <option value="arriveTime">到达时间</option>
+                                    <option value="deliverTime">交邮时间</option>
+                                </select>
+                            </div>
+                            <div class="search-group">
+                                <label for="startDate">开始时间：</label>
+                                <input type="date" id="startDate" class="search-input">
+                            </div>
+                            <div class="search-group">
+                                <label for="endDate">结束时间：</label>
+                                <input type="date" id="endDate" class="search-input">
+                            </div>
+                        </div>
+                        
+                        <!-- 第三行：操作按钮 -->
+                        <div class="search-row">
+                            <div class="search-buttons">
+                                <button class="btn btn-primary" onclick="searchMailData()">
+                                    <i class="fas fa-search"></i> 搜索
+                                </button>
+                                <button class="btn btn-secondary" onclick="clearSearch()">
+                                    <i class="fas fa-times"></i> 清空
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
 
+                <!-- Excel导入和删除按钮 -->
+                <div class="action-buttons" style="margin-bottom: 20px; display: flex; gap: 10px;">
+                    <button class="btn btn-success" onclick="showImportExcelModal()">
+                        <i class="fas fa-file-excel"></i> Excel导入
+                    </button>
+                    <button class="btn btn-danger" onclick="deleteSelectedRows()" style="background-color: #dc3545; border-color: #dc3545;">
+                        <i class="fas fa-trash"></i> 删除
+                    </button>
+                </div>
+
                 <!-- 邮件数据列表 -->
-                <div class="employee-list bill-list">
-                    <table class="employee-table">
-                        <thead>
-                            <tr>
-                                <th>序号</th>
+                <div class="bill-list">
+                    <div class="table-container" style="overflow-x: auto; max-width: 100%; border: 1px solid #d0d7de; border-radius: 6px;">
+                        <table class="employee-table">
+                            <thead>
+                                <tr>
+                                    <th><input type="checkbox" id="selectAll" onchange="toggleSelectAll()"></th>
+                                    <th>序号</th>
                                 <th>邮件类型</th>
+                                <th>邮件种类</th>
                                 <th>总包号</th>
                                 <th>始发局</th>
                                 <th>寄达局</th>
@@ -155,12 +199,23 @@
                             <!-- 数据通过JavaScript动态加载 -->
                         </tbody>
                     </table>
+                    </div>
                 </div>
 
                 <!-- 分页导航 -->
                 <div class="pagination-container">
-                    <div class="pagination-info">
-                        <span id="paginationInfo">显示第 1-15 条，共 0 条记录</span>
+                    <div class="pagination-left">
+                        <div class="pagination-info">
+                            <span id="paginationInfo">显示第 1-200 条，共 0 条记录</span>
+                        </div>
+                        <div class="pagination-size">
+                            <label for="pageSizeSelect">每页显示：</label>
+                            <select id="pageSizeSelect" onchange="changePageSize()">
+                                <option value="200">200条</option>
+                                <option value="500">500条</option>
+                                <option value="1000" selected>1000条</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="pagination-controls">
                         <button class="btn btn-outline" id="firstPageBtn" onclick="goToPage(1)">
@@ -178,15 +233,6 @@
                         <button class="btn btn-outline" id="lastPageBtn" onclick="goToPage(totalPages)">
                             末页 <i class="fas fa-angle-double-right"></i>
                         </button>
-                    </div>
-                    <div class="pagination-size">
-                        <label for="pageSizeSelect">每页显示：</label>
-                        <select id="pageSizeSelect" onchange="changePageSize()">
-                            <option value="15">15条</option>
-                            <option value="30">30条</option>
-                            <option value="50">50条</option>
-                            <option value="100">100条</option>
-                        </select>
                     </div>
                 </div>
             </main>
@@ -287,6 +333,47 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" onclick="closeAddMailDataModal()">取消</button>
                 <button type="button" class="btn btn-primary" onclick="addMailData()">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Excel导入模态框 -->
+    <div id="importExcelModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-file-excel"></i> Excel导入邮件数据</h3>
+                <span class="close" onclick="closeImportExcelModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="import-instructions">
+                    <h4>导入说明：</h4>
+                    <ul>
+                        <li>Excel文件必须包含以下字段：邮件类型、总包号、到达地、接收时间、启运时间、到达时间、交邮时间</li>
+                        <li>邮件类型格式：只能是PY或TY</li>
+                        <li>总包号格式：前15位字母+后14位数字，共29位</li>
+                        <li>时间格式：YYYY-MM-DD HH:MM:SS</li>
+                        <li>如果任何一条数据验证失败，整个导入将被取消</li>
+                        <li>系统会自动填充收费路由、航班、费率、运能编码等信息</li>
+                    </ul>
+                </div>
+                <div class="form-group">
+                    <label for="excelFile">选择Excel文件 <span class="required">*</span></label>
+                    <input type="file" id="excelFile" accept=".xlsx,.xls" required>
+                    <small class="form-text text-muted">支持.xlsx和.xls格式</small>
+                </div>
+                <div id="importProgress" class="import-progress" style="display: none;">
+                    <div class="progress-bar">
+                        <div class="progress-fill"></div>
+                    </div>
+                    <div class="progress-text">正在导入...</div>
+                </div>
+                <div id="importResult" class="import-result" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeImportExcelModal()">取消</button>
+                <button type="button" class="btn btn-success" onclick="importExcelData()" id="importBtn">
+                    <i class="fas fa-upload"></i> 开始导入
+                </button>
             </div>
         </div>
     </div>
@@ -425,18 +512,26 @@
         // 全局变量
         let currentPage = 1;
         let totalPages = 1;
-        let pageSize = 15;
+        let pageSize = 1000;
         let totalRecords = 0;
         let searchKeyword = '';
 
+        // 搜索功能已移至文件前部
+
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', function() {
-            // 检查菜单状态
-            checkMenuState();
-            // 加载邮件数据
-            loadMailData();
-            // 设置总包号实时验证
-            setupReceptacleNoValidation();
+            try {
+                // 检查菜单状态
+                checkMenuState();
+                // 加载邮件数据
+                console.log('页面加载完成，开始加载邮件数据');
+                loadMailData();
+                // 设置总包号实时验证
+                setupReceptacleNoValidation();
+            } catch (error) {
+                console.error('页面初始化错误:', error);
+                alert('页面初始化失败: ' + error.message);
+            }
         });
 
         // 检查菜单状态
@@ -452,6 +547,7 @@
 
         // 加载邮件数据
         function loadMailData(page = 1) {
+            console.log('loadMailData called with page:', page);
             currentPage = page;
             
             const params = new URLSearchParams({
@@ -463,19 +559,36 @@
                 params.append('search', searchKeyword);
             }
             
+            console.log('Fetching URL:', `/api/mail_data?${params}`);
             fetch(`/api/mail_data?${params}`)
-                .then(response => response.json())
+                .then(response => {
+                    console.log('Response status:', response.status);
+                    return response.json();
+                })
                 .then(data => {
+                    console.log('API response:', data);
                     if (data.success) {
+                        console.log('Data received, count:', data.data ? data.data.length : 0);
                         updateMailDataDisplay(data.data);
                         updateMailDataPagination(data);
                     } else {
+                        console.log('API error:', data.message);
+                        // 如果是未登录错误，重定向到登录页面
+                        if (data.message && data.message.includes('登录')) {
+                            console.log('Redirecting to login');
+                            window.location.href = '/login';
+                            return;
+                        }
                         showMessage('获取邮件数据失败: ' + data.message, 'error');
+                        // 显示空数据状态
+                        updateMailDataDisplay([]);
                     }
                 })
                 .catch(error => {
                     console.error('Error:', error);
                     showMessage('网络错误，请稍后重试', 'error');
+                    // 显示空数据状态
+                    updateMailDataDisplay([]);
                 });
         }
 
@@ -485,7 +598,7 @@
             tbody.innerHTML = '';
             
             if (mailData.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="16" class="text-center">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="18" class="text-center">暂无数据</td></tr>';
                 return;
             }
             
@@ -494,8 +607,10 @@
                 const serialNumber = (currentPage - 1) * pageSize + index + 1;
                 
                 row.innerHTML = `
+                    <td><input type="checkbox" class="row-checkbox" value="${item.mail_id}" onchange="updateSelectAllState()"></td>
                     <td>${serialNumber}</td>
                     <td>${item.Mail_class || ''}</td>
+                    <td>${item.mail_settle_code || ''}</td>
                     <td>${item.mail_receptacleNo || ''}</td>
                     <td>${item.mail_originPost || ''}</td>
                     <td>${item.mail_destPost || ''}</td>
@@ -506,7 +621,7 @@
                     <td>${formatDateTime(item.mail_deliverTime)}</td>
                     <td>${item.mail_routeInfo || ''}</td>
                     <td>${item.mail_flightInfo || ''}</td>
-                    <td>${item.mail_weight || ''}</td>
+                    <td>${item.mail_weight ? parseFloat(item.mail_weight).toFixed(1) : ''}</td>
                     <td>${item.mail_quote || ''}</td>
                     <td>${item.mail_charge || ''}</td>
                     <td>${item.mail_carrCode || ''}</td>
@@ -522,6 +637,13 @@
                 
                 tbody.appendChild(row);
             });
+            
+            // 重置全选状态
+            const selectAllCheckbox = document.getElementById('selectAll');
+            if (selectAllCheckbox) {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = false;
+            }
         }
 
         // 更新分页信息
@@ -595,27 +717,59 @@
 
         // 搜索功能
         function searchMailData() {
-            searchKeyword = document.getElementById('searchInput').value.trim();
+            // 获取所有搜索条件
+            const receptacleNos = document.getElementById('receptacleNoInput').value.trim();
+            const dests = document.getElementById('destInput').value.trim();
+            const timeType = document.getElementById('timeTypeSelect').value;
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            
+            // 构建搜索参数
+            const searchParams = {};
+            if (receptacleNos) searchParams.receptacle_nos = receptacleNos;
+            if (dests) searchParams.destinations = dests;
+            if (timeType && startDate) {
+                searchParams.time_type = timeType;
+                searchParams.start_date = startDate;
+                if (endDate) searchParams.end_date = endDate;
+            }
+            
+            // 将搜索参数转换为字符串存储
+            searchKeyword = JSON.stringify(searchParams);
             loadMailData(1);
         }
 
         function clearSearch() {
-            document.getElementById('searchInput').value = '';
+            document.getElementById('receptacleNoInput').value = '';
+            document.getElementById('destInput').value = '';
+            document.getElementById('timeTypeSelect').value = '';
+            document.getElementById('startDate').value = '';
+            document.getElementById('endDate').value = '';
             searchKeyword = '';
             loadMailData(1);
         }
+        
+
 
         // 格式化日期时间
         function formatDateTime(dateTimeStr) {
             if (!dateTimeStr) return '';
+            
+            // 处理YYYYMMDD格式的字符串，直接返回原格式
+            if (typeof dateTimeStr === 'string' && dateTimeStr.length === 8 && /^\d{8}$/.test(dateTimeStr)) {
+                return dateTimeStr;
+            }
+            
+            // 处理标准日期时间格式，转换为YYYYMMDD格式
             const date = new Date(dateTimeStr);
-            return date.toLocaleString('zh-CN', {
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit'
-            });
+            if (isNaN(date.getTime())) {
+                return dateTimeStr; // 如果无法解析，返回原字符串
+            }
+            
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}${month}${day}`;
         }
 
         // 显示添加邮件数据模态框
@@ -636,7 +790,7 @@
                  return { isValid: false, message: '邮件类型不能为空' };
              }
              if (mailClass !== 'TY' && mailClass !== 'PY') {
-                 return { isValid: false, message: '邮件类型字段不符合要求' };
+                 return { isValid: false, message: '邮件类型只能是PY或TY' };
              }
              return { isValid: true, message: '' };
          }
@@ -739,6 +893,83 @@
             return `${year}-${month}-${day}T00:00`;
         }
 
+        // 通过到达地获取账单信息并自动填充相关字段
+        async function autoFillBillInfo(destination, isEdit = false) {
+            if (!destination || destination.trim() === '') {
+                return;
+            }
+            
+            // 获取当前选择的邮件类型
+            const prefix = isEdit ? 'edit' : 'add';
+            const mailClassElement = document.getElementById(`${prefix}MailClass`);
+            const mailClass = mailClassElement ? mailClassElement.value : '';
+            
+            try {
+                const response = await fetch('/api/get_bill_info_by_destination', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        destination: destination.trim(),
+                        mail_class: mailClass
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success && result.data) {
+                    const prefix = isEdit ? 'edit' : 'add';
+                    
+                    // 自动填充字段
+                    document.getElementById(`${prefix}RouteInfo`).value = result.data.route_info || '';
+                    document.getElementById(`${prefix}FlightInfo`).value = result.data.flight_no || '';
+                    document.getElementById(`${prefix}Quote`).value = result.data.quote || '';
+                    document.getElementById(`${prefix}CarrCode`).value = result.data.carr_code || '';
+                    
+                    // 触发费率变化事件，重新计算金额
+                    const quoteInput = document.getElementById(`${prefix}Quote`);
+                    if (quoteInput) {
+                        quoteInput.dispatchEvent(new Event('input'));
+                    }
+                }
+            } catch (error) {
+                console.error('获取账单信息失败:', error);
+            }
+        }
+
+        // 根据总包号计算重量（最后3位数字除以10）
+        function calculateWeight(receptacleNo) {
+            if (!receptacleNo || receptacleNo.length < 3) {
+                return '';
+            }
+            
+            // 获取总包号最后3位数字
+            const lastThreeDigits = receptacleNo.slice(-3);
+            
+            // 检查是否为数字
+            if (!/^\d{3}$/.test(lastThreeDigits)) {
+                return '';
+            }
+            
+            // 除以10并保留1位小数
+            const weight = parseInt(lastThreeDigits) / 10;
+            return weight.toFixed(1);
+        }
+
+        // 计算金额（重量 * 费率）
+        function calculateCharge(weight, quote) {
+            const weightNum = parseFloat(weight) || 0;
+            const quoteNum = parseFloat(quote) || 0;
+            
+            if (weightNum === 0 || quoteNum === 0) {
+                return '';
+            }
+            
+            const charge = weightNum * quoteNum;
+            return charge.toFixed(2);
+        }
+
         // 实时验证总包号输入并自动提取始发局和寄达局
         function setupReceptacleNoValidation() {
             const addInput = document.getElementById('addReceptacleNo');
@@ -767,12 +998,26 @@
             if (addInput) {
                 addInput.addEventListener('input', function() {
                     validateInput(this, false);
+                    // 自动计算重量
+                    const weight = calculateWeight(this.value);
+                    document.getElementById('addWeight').value = weight;
+                    // 重新计算金额
+                    const quote = document.getElementById('addQuote').value;
+                    const charge = calculateCharge(weight, quote);
+                    document.getElementById('addCharge').value = charge;
                 });
             }
             
             if (editInput) {
                 editInput.addEventListener('input', function() {
                     validateInput(this, true);
+                    // 自动计算重量
+                    const weight = calculateWeight(this.value);
+                    document.getElementById('editWeight').value = weight;
+                    // 重新计算金额
+                    const quote = document.getElementById('editQuote').value;
+                    const charge = calculateCharge(weight, quote);
+                    document.getElementById('editCharge').value = charge;
                 });
             }
         }
@@ -1096,6 +1341,159 @@
             }, 3000);
         }
 
+        // Excel导入相关函数
+        function showImportExcelModal() {
+            document.getElementById('importExcelModal').style.display = 'block';
+        }
+
+        function closeImportExcelModal() {
+            document.getElementById('importExcelModal').style.display = 'none';
+            document.getElementById('excelFile').value = '';
+            document.getElementById('importProgress').style.display = 'none';
+            document.getElementById('importResult').style.display = 'none';
+        }
+
+        function importExcelData() {
+            const fileInput = document.getElementById('excelFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                showMessage('请选择Excel文件', 'error');
+                return;
+            }
+            
+            // 检查文件类型
+            const allowedTypes = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel'];
+            if (!allowedTypes.includes(file.type)) {
+                showMessage('请选择有效的Excel文件(.xlsx或.xls)', 'error');
+                return;
+            }
+            
+            // 显示进度条
+            document.getElementById('importProgress').style.display = 'block';
+            document.getElementById('importResult').style.display = 'none';
+            document.getElementById('importBtn').disabled = true;
+            
+            // 初始化进度条
+            const progressFill = document.querySelector('.progress-fill');
+            const progressText = document.querySelector('.progress-text');
+            progressFill.style.width = '0%';
+            progressText.textContent = '正在准备导入...';
+            
+            let taskId = null;
+            let progressInterval = null;
+            
+            // 创建FormData对象
+            const formData = new FormData();
+            formData.append('excel_file', file);
+            
+            // 发送请求
+            fetch('/api/import_excel_mail_data', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.task_id) {
+                    taskId = data.task_id;
+                    // 开始查询进度
+                    startProgressPolling();
+                } else {
+                    // 如果没有task_id，说明立即失败了
+                    handleImportComplete(data);
+                }
+            })
+            .catch(error => {
+                console.error('导入请求失败:', error);
+                progressText.textContent = '导入请求失败';
+                document.getElementById('importBtn').disabled = false;
+            });
+            
+            // 进度查询函数
+            function startProgressPolling() {
+                progressInterval = setInterval(() => {
+                    fetch(`/api/import_progress/${taskId}`)
+                    .then(response => response.json())
+                    .then(progressData => {
+                        if (progressData.status === 'completed' || progressData.status === 'error') {
+                            clearInterval(progressInterval);
+                            handleImportComplete(progressData);
+                        } else {
+                            updateProgress(progressData);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('进度查询失败:', error);
+                    });
+                }, 1000); // 每秒查询一次
+            }
+            
+            // 更新进度显示
+            function updateProgress(progressData) {
+                const { current = 0, total = 100, message = '处理中...' } = progressData;
+                const progressPercent = total > 0 ? (current / total) * 100 : 0;
+                progressFill.style.width = Math.min(progressPercent, 95) + '%'; // 最多显示95%，完成时显示100%
+                progressText.textContent = message;
+            }
+            
+            // 处理导入完成
+            function handleImportComplete(data) {
+                // 完成进度条
+                progressFill.style.width = '100%';
+                if (data.status === 'completed' && data.imported_count) {
+                    progressText.textContent = `导入完成！共处理 ${data.imported_count} 条数据`;
+                } else if (data.status === 'error') {
+                    progressText.textContent = data.message || '导入失败';
+                } else {
+                    progressText.textContent = '处理完成！';
+                }
+                
+                setTimeout(() => {
+                    document.getElementById('importProgress').style.display = 'none';
+                }, 1000);
+                
+                document.getElementById('importBtn').disabled = false;
+                
+                if (data.status === 'completed' || data.success) {
+                    const importedCount = data.imported_count || 0;
+                    document.getElementById('importResult').innerHTML = `
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle"></i>
+                            <strong>导入成功！</strong><br>
+                            成功导入 ${importedCount} 条记录
+                        </div>
+                    `;
+                    document.getElementById('importResult').style.display = 'block';
+                    
+                    // 刷新数据列表
+                    setTimeout(() => {
+                        closeImportExcelModal();
+                        loadMailData(1);
+                        showMessage('Excel导入成功', 'success');
+                    }, 2000);
+                } else {
+                    let errorHtml = `
+                        <div class="alert alert-error">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <strong>导入失败！</strong><br>
+                            ${data.message}
+                    `;
+                    
+                    if (data.errors && data.errors.length > 0) {
+                        errorHtml += '<br><br><strong>详细错误信息：</strong><ul>';
+                        data.errors.forEach(error => {
+                            errorHtml += `<li>第${error.row}行: ${error.message}</li>`;
+                        });
+                        errorHtml += '</ul>';
+                    }
+                    
+                    errorHtml += '</div>';
+                    document.getElementById('importResult').innerHTML = errorHtml;
+                    document.getElementById('importResult').style.display = 'block';
+                }
+            }
+        }
+
         // 用户下拉菜单交互
         // 用户下拉菜单功能
         const userDropdown = document.querySelector('.user-dropdown');
@@ -1153,6 +1551,165 @@
                     dropdownContent.classList.remove('show');
                 }
             });
+            
+            // 设置自动填充和计算功能的事件监听器
+            setupAutoFillListeners();
+        }
+        
+        // 设置到达地和费率字段的事件监听器
+        function setupAutoFillListeners() {
+            // 添加表单的到达地字段
+            const addDestInput = document.getElementById('addDest');
+            if (addDestInput) {
+                addDestInput.addEventListener('blur', function() {
+                    autoFillBillInfo(this.value, false);
+                });
+            }
+            
+            // 编辑表单的到达地字段
+            const editDestInput = document.getElementById('editDest');
+            if (editDestInput) {
+                editDestInput.addEventListener('blur', function() {
+                    autoFillBillInfo(this.value, true);
+                });
+            }
+            
+            // 添加表单的邮件类型字段
+            const addMailClassInput = document.getElementById('addMailClass');
+            if (addMailClassInput) {
+                addMailClassInput.addEventListener('change', function() {
+                    const destination = document.getElementById('addDest').value;
+                    if (destination && destination.trim() !== '') {
+                        autoFillBillInfo(destination, false);
+                    }
+                });
+            }
+            
+            // 编辑表单的邮件类型字段
+            const editMailClassInput = document.getElementById('editMailClass');
+            if (editMailClassInput) {
+                editMailClassInput.addEventListener('change', function() {
+                    const destination = document.getElementById('editDest').value;
+                    if (destination && destination.trim() !== '') {
+                        autoFillBillInfo(destination, true);
+                    }
+                });
+            }
+            
+            // 添加表单的费率字段
+            const addQuoteInput = document.getElementById('addQuote');
+            if (addQuoteInput) {
+                addQuoteInput.addEventListener('input', function() {
+                    const weight = document.getElementById('addWeight').value;
+                    const charge = calculateCharge(weight, this.value);
+                    document.getElementById('addCharge').value = charge;
+                });
+            }
+            
+            // 编辑表单的费率字段
+            const editQuoteInput = document.getElementById('editQuote');
+            if (editQuoteInput) {
+                editQuoteInput.addEventListener('input', function() {
+                    const weight = document.getElementById('editWeight').value;
+                    const charge = calculateCharge(weight, this.value);
+                    document.getElementById('editCharge').value = charge;
+                });
+            }
+            
+            // 添加表单的重量字段
+            const addWeightInput = document.getElementById('addWeight');
+            if (addWeightInput) {
+                addWeightInput.addEventListener('input', function() {
+                    const quote = document.getElementById('addQuote').value;
+                    const charge = calculateCharge(this.value, quote);
+                    document.getElementById('addCharge').value = charge;
+                });
+            }
+            
+            // 编辑表单的重量字段
+            const editWeightInput = document.getElementById('editWeight');
+            if (editWeightInput) {
+                editWeightInput.addEventListener('input', function() {
+                    const quote = document.getElementById('editQuote').value;
+                    const charge = calculateCharge(this.value, quote);
+                    document.getElementById('editCharge').value = charge;
+                });
+            }
+        }
+
+        // 全选/取消全选功能
+        function toggleSelectAll() {
+            const selectAllCheckbox = document.getElementById('selectAll');
+            const rowCheckboxes = document.querySelectorAll('.row-checkbox');
+            
+            rowCheckboxes.forEach(checkbox => {
+                checkbox.checked = selectAllCheckbox.checked;
+            });
+        }
+        
+        // 更新全选状态
+        function updateSelectAllState() {
+            const selectAllCheckbox = document.getElementById('selectAll');
+            const rowCheckboxes = document.querySelectorAll('.row-checkbox');
+            const checkedBoxes = document.querySelectorAll('.row-checkbox:checked');
+            
+            if (checkedBoxes.length === 0) {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = false;
+            } else if (checkedBoxes.length === rowCheckboxes.length) {
+                selectAllCheckbox.checked = true;
+                selectAllCheckbox.indeterminate = false;
+            } else {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = true;
+            }
+        }
+        
+        // 获取选中的行ID
+        function getSelectedRowIds() {
+            const checkedBoxes = document.querySelectorAll('.row-checkbox:checked');
+            return Array.from(checkedBoxes).map(checkbox => checkbox.value);
+        }
+
+        // 删除选中的行
+        async function deleteSelectedRows() {
+            const selectedIds = getSelectedRowIds();
+            
+            if (selectedIds.length === 0) {
+                showMessage('请先选择要删除的数据', 'warning');
+                return;
+            }
+            
+            // 确认删除弹窗
+            const confirmDelete = confirm(`确定要删除选中的 ${selectedIds.length} 条数据吗？此操作不可撤销！`);
+            if (!confirmDelete) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/delete_mail_data', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        ids: selectedIds
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showMessage(`成功删除 ${selectedIds.length} 条数据`, 'success');
+                    // 重新加载数据
+                    loadMailData(currentPage);
+                } else {
+                    showMessage('删除失败: ' + result.message, 'error');
+                }
+            } catch (error) {
+                console.error('删除数据时发生错误:', error);
+                showMessage('删除失败: 网络错误', 'error');
+            }
         }
 
         // 点击模态框外部关闭
@@ -1165,5 +1722,8 @@
             });
         }
     </script>
+
+
+
 </body>
 </html>

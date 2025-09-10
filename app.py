@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 import mysql.connector
 from werkzeug.security import check_password_hash, generate_password_hash
-from datetime import datetime
+from datetime import datetime, timedelta
 import pandas as pd
 from werkzeug.utils import secure_filename
 import os
@@ -9,11 +9,19 @@ from mysql.connector import Error
 import json
 from datetime import datetime
 import re
+import threading
+import time
 
 app = Flask(__name__)
 
+# 全局进度跟踪字典
+import_progress = {}
+
 # 配置密钥
 app.secret_key = 'cnpost_invoice_system_2024'
+
+# 配置session过期时间为24小时
+app.permanent_session_lifetime = timedelta(hours=24)
 
 # 配置上传文件夹
 UPLOAD_FOLDER = 'uploads'
@@ -36,7 +44,7 @@ def validate_mail_class(mail_class):
         return False, "邮件类型字段不符合要求"
     return True, ""
 
-def validate_destination(destination):
+def validate_destination_format(destination):
     """验证目的地格式"""
     if not destination:
         return False, "目的地不能为空"
@@ -89,7 +97,7 @@ def validate_bill_data(data, connection, exclude_id=None):
         errors.append(error_msg)
     
     # 验证目的地格式
-    is_valid, error_msg = validate_destination(data.get('des', ''))
+    is_valid, error_msg = validate_destination_format(data.get('des', ''))
     if not is_valid:
         errors.append(error_msg)
     
@@ -136,7 +144,9 @@ DB_CONFIG = {
     'database': 'cnpost_bill_system',
     'user': 'root',
     'password': '123456',
-    'charset': 'utf8mb4'
+    'charset': 'utf8mb4',
+    'use_unicode': True,
+    'autocommit': False  # 手动控制事务
 }
 
 # 数据库连接函数
@@ -285,6 +295,7 @@ def login():
         # 使用数据库验证用户
         user = verify_user(username, password)
         if user:
+            session.permanent = True  # 设置session为永久性
             session['loggedin'] = True
             session['username'] = user['username']
             session['user_id'] = user['id']
@@ -1557,6 +1568,7 @@ def get_mail_data():
     try:
         page = int(request.args.get('page', 1))
         per_page = int(request.args.get('per_page', 15))
+        search = request.args.get('search', '')
         
         connection = get_db_connection()
         if connection:
@@ -1565,20 +1577,100 @@ def get_mail_data():
             # 计算偏移量
             offset = (page - 1) * per_page
             
-            # 获取总记录数
-            cursor.execute("SELECT COUNT(*) as total FROM mail_data")
-            total_count = cursor.fetchone()['total']
+            # 构建查询条件
+            where_conditions = []
+            query_params = []
             
-            # 获取分页数据
-            cursor.execute("""
-                SELECT mail_id, mail_receptacleNo, mail_originPost, mail_destPost, 
-                       mail_dest, mail_recTime, mail_upliftTime, mail_arriveTime, 
-                       mail_deliverTime, mail_routeInfo, mail_flightInfo, mail_weight, 
-                       mail_quote, mail_charge, mail_carrCode, created_at
-                FROM mail_data 
-                ORDER BY created_at DESC 
-                LIMIT %s OFFSET %s
-            """, (per_page, offset))
+            if search:
+                try:
+                    # 尝试解析JSON格式的搜索参数
+                    search_params = json.loads(search)
+                    
+                    # 总包号查询
+                    if 'receptacle_nos' in search_params and search_params['receptacle_nos']:
+                        receptacle_list = [no.strip() for no in search_params['receptacle_nos'].split(',') if no.strip()]
+                        if receptacle_list:
+                            placeholders = ','.join(['%s'] * len(receptacle_list))
+                            where_conditions.append(f"mail_receptacleNo IN ({placeholders})")
+                            query_params.extend(receptacle_list)
+                    
+                    # 到达地查询
+                    if 'destinations' in search_params and search_params['destinations']:
+                        dest_list = [dest.strip() for dest in search_params['destinations'].split(',') if dest.strip()]
+                        if dest_list:
+                            dest_conditions = []
+                            for dest in dest_list:
+                                dest_conditions.append("mail_dest LIKE %s")
+                                query_params.append(f"%{dest}%")
+                            where_conditions.append(f"({' OR '.join(dest_conditions)})")
+                    
+                    # 时间范围查询
+                    if 'time_type' in search_params and 'start_date' in search_params:
+                        time_type = search_params['time_type']
+                        start_date = search_params['start_date'].replace('-', '')
+                        
+                        if time_type in ['recTime', 'upliftTime', 'arriveTime', 'deliverTime']:
+                            time_field = f"mail_{time_type}"
+                            where_conditions.append(f"{time_field} >= %s")
+                            query_params.append(start_date)
+                            
+                            if 'end_date' in search_params and search_params['end_date']:
+                                end_date = search_params['end_date'].replace('-', '')
+                                where_conditions.append(f"{time_field} <= %s")
+                                query_params.append(end_date)
+                                
+                except json.JSONDecodeError:
+                    # 如果不是JSON格式，按原来的方式处理（兼容旧版本）
+                    where_conditions.append("""
+                        (mail_receptacleNo LIKE %s OR mail_originPost LIKE %s OR 
+                         mail_destPost LIKE %s OR mail_dest LIKE %s)
+                    """)
+                    search_term = f"%{search}%"
+                    query_params.extend([search_term, search_term, search_term, search_term])
+            
+            # 构建WHERE子句
+            where_clause = ""
+            if where_conditions:
+                where_clause = "WHERE " + " AND ".join(where_conditions)
+            
+            # 如果没有搜索条件，只显示最新的1000条记录
+            if not where_conditions:
+                # 获取最新1000条记录的总数（最多1000）
+                count_query = "SELECT COUNT(*) as total FROM (SELECT mail_id FROM mail_data ORDER BY created_at DESC LIMIT 1000) as recent_data"
+                cursor.execute(count_query)
+                total_count = cursor.fetchone()['total']
+                
+                # 获取最新1000条记录的分页数据
+                data_query = """
+                    SELECT * FROM (
+                        SELECT mail_id, mail_receptacleNo, mail_originPost, mail_destPost, 
+                               mail_dest, mail_recTime, mail_upliftTime, mail_arriveTime, 
+                               mail_deliverTime, mail_routeInfo, mail_flightInfo, mail_weight, 
+                               mail_quote, mail_charge, mail_carrCode, Mail_class, mail_settle_code, created_at
+                        FROM mail_data 
+                        ORDER BY created_at DESC 
+                        LIMIT 1000
+                    ) as recent_data
+                    LIMIT %s OFFSET %s
+                """
+                cursor.execute(data_query, [per_page, offset])
+            else:
+                # 有搜索条件时，查询所有匹配的记录
+                count_query = f"SELECT COUNT(*) as total FROM mail_data {where_clause}"
+                cursor.execute(count_query, query_params)
+                total_count = cursor.fetchone()['total']
+                
+                # 获取搜索结果的分页数据
+                data_query = f"""
+                    SELECT mail_id, mail_receptacleNo, mail_originPost, mail_destPost, 
+                           mail_dest, mail_recTime, mail_upliftTime, mail_arriveTime, 
+                           mail_deliverTime, mail_routeInfo, mail_flightInfo, mail_weight, 
+                           mail_quote, mail_charge, mail_carrCode, Mail_class, mail_settle_code, created_at
+                    FROM mail_data {where_clause}
+                    ORDER BY created_at DESC 
+                    LIMIT %s OFFSET %s
+                """
+                cursor.execute(data_query, query_params + [per_page, offset])
             mail_data = cursor.fetchall()
             
             # 计算总页数
@@ -1609,7 +1701,7 @@ def validate_mail_class_for_mail_data(mail_class):
     if not mail_class:
         return False, '邮件类型不能为空'
     if mail_class not in ['TY', 'PY']:
-        return False, '邮件类型字段不符合要求'
+        return False, '邮件类型只能是PY或TY'
     return True, ''
 
 # 验证总包号格式
@@ -1660,6 +1752,74 @@ def validate_destination():
             
     except Exception as e:
         return jsonify({'success': False, 'message': f'验证失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if 'connection' in locals() and connection:
+            connection.close()
+
+# 通过到达地获取账单信息管理中的相关数据
+@app.route('/api/get_bill_info_by_destination', methods=['POST'])
+def get_bill_info_by_destination():
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        data = request.get_json()
+        destination = data.get('destination', '').strip()
+        mail_class = data.get('mail_class', '').strip()  # 获取邮件类型
+        
+        if not destination:
+            return jsonify({'success': False, 'message': '到达地不能为空'})
+        
+        connection = get_db_connection()
+        cursor = connection.cursor()
+        
+        # 如果提供了邮件类型，则优先根据邮件类型和到达地查询
+        if mail_class:
+            cursor.execute("""
+                SELECT flight_no, route_info, quote, carr_code 
+                FROM bill_info 
+                WHERE des = %s AND mail_class = %s
+                LIMIT 1
+            """, (destination, mail_class))
+            
+            result = cursor.fetchone()
+            
+            # 如果根据邮件类型没找到，则查询所有该到达地的记录
+            if not result:
+                cursor.execute("""
+                    SELECT flight_no, route_info, quote, carr_code 
+                    FROM bill_info 
+                    WHERE des = %s 
+                    LIMIT 1
+                """, (destination,))
+                result = cursor.fetchone()
+        else:
+            # 没有邮件类型时，直接查询该到达地的记录
+            cursor.execute("""
+                SELECT flight_no, route_info, quote, carr_code 
+                FROM bill_info 
+                WHERE des = %s 
+                LIMIT 1
+            """, (destination,))
+            result = cursor.fetchone()
+        
+        if result:
+            return jsonify({
+                'success': True,
+                'data': {
+                    'flight_no': result[0] or '',      # 航班号
+                    'route_info': result[1] or '',     # 路由信息
+                    'quote': result[2] or 0,           # 报价
+                    'carr_code': result[3] or ''       # 承运代码
+                }
+            })
+        else:
+            return jsonify({'success': False, 'message': '未找到该到达地的账单信息'})
+            
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'获取账单信息失败: {str(e)}'})
     finally:
         if 'cursor' in locals() and cursor:
             cursor.close()
@@ -1837,6 +1997,426 @@ def delete_mail_data(mail_id):
         if 'connection' in locals() and connection:
             connection.close()
 
+@app.route('/api/delete_mail_data', methods=['POST'])
+def delete_multiple_mail_data():
+    """批量删除邮件数据"""
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        data = request.get_json()
+        ids = data.get('ids', [])
+        
+        if not ids:
+            return jsonify({'success': False, 'message': '请选择要删除的数据'})
+        
+        # 验证所有ID都是整数
+        try:
+            ids = [int(id) for id in ids]
+        except ValueError:
+            return jsonify({'success': False, 'message': '无效的数据ID'})
+        
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor()
+            
+            # 构建批量删除SQL
+            placeholders = ','.join(['%s'] * len(ids))
+            sql = f"DELETE FROM mail_data WHERE mail_id IN ({placeholders})"
+            
+            cursor.execute(sql, ids)
+            connection.commit()
+            
+            deleted_count = cursor.rowcount
+            
+            if deleted_count > 0:
+                return jsonify({
+                    'success': True, 
+                    'message': f'成功删除 {deleted_count} 条数据',
+                    'deleted_count': deleted_count
+                })
+            else:
+                return jsonify({'success': False, 'message': '未找到要删除的数据'})
+        else:
+            return jsonify({'success': False, 'message': '数据库连接失败'})
+            
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'删除失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if 'connection' in locals() and connection:
+            connection.close()
+
+@app.route('/api/import_progress/<task_id>', methods=['GET'])
+def get_import_progress(task_id):
+    """获取导入进度"""
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    progress_data = import_progress.get(task_id, {
+        'current': 0,
+        'total': 0,
+        'status': 'not_found',
+        'message': '任务不存在'
+    })
+    
+    return jsonify(progress_data)
+
+@app.route('/api/import_excel_mail_data', methods=['POST'])
+def import_excel_mail_data():
+    """Excel导入邮件数据"""
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    if 'excel_file' not in request.files:
+        return jsonify({'success': False, 'message': '未选择文件'})
+    
+    file = request.files['excel_file']
+    if file.filename == '':
+        return jsonify({'success': False, 'message': '未选择文件'})
+    
+    if not allowed_file(file.filename):
+        return jsonify({'success': False, 'message': '文件格式不支持，请选择.xlsx或.xls文件'})
+    
+    # 生成任务ID
+    task_id = f"import_{int(time.time())}_{session.get('user_id', 'unknown')}"
+    
+    # 初始化进度
+    import_progress[task_id] = {
+        'current': 0,
+        'total': 0,
+        'status': 'starting',
+        'message': '正在准备导入...'
+    }
+    
+    try:
+        # 读取Excel文件
+        df = pd.read_excel(file)
+        
+        # 更新总行数
+        total_rows = len(df)
+        import_progress[task_id].update({
+            'total': total_rows,
+            'status': 'reading',
+            'message': f'已读取Excel文件，共{total_rows}行数据'
+        })
+        
+        # 检查必需的列
+        required_columns = ['邮件类型', '总包号', '到达地', '接收时间', '启运时间', '到达时间', '交邮时间']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            import_progress[task_id].update({
+                'status': 'error',
+                'message': f'Excel文件缺少必需的列: {", ".join(missing_columns)}'
+            })
+            return jsonify({
+                'success': False, 
+                'message': f'Excel文件缺少必需的列: {", ".join(missing_columns)}',
+                'task_id': task_id
+            })
+        
+        # 验证数据并准备导入
+        errors = []
+        valid_data = []
+        seen_receptacle_nos = set()  # 用于检查文件内重复
+        
+        # 预先获取数据库连接，避免重复连接
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': '数据库连接失败'})
+        
+        cursor = connection.cursor()
+        
+        try:
+            # 预加载所有可能用到的数据，减少查询次数
+            # 1. 预加载所有现有的总包号
+            cursor.execute("SELECT mail_receptacleNo FROM mail_data")
+            existing_receptacle_nos = set(row[0] for row in cursor.fetchall())
+            
+            # 2. 预加载账单信息
+            cursor.execute("SELECT des, mail_class, flight_no, route_info, quote, carry_code FROM bill_info")
+            bill_info_cache = {}
+            for row in cursor.fetchall():
+                key = (row[0], row[1])  # (destination, mail_class)
+                bill_info_cache[key] = (row[2], row[3], row[4], row[5])  # (flight_no, route_info, quote, carry_code)
+            
+            # 3. 预加载产品信息
+            cursor.execute("SELECT product_identifier1, product_identifier2, product_settle_code FROM products")
+            products_cache = {}
+            for row in cursor.fetchall():
+                identifier1, identifier2, settle_code = row
+                # 创建两种查询键：只有identifier1的和同时有identifier1和identifier2的
+                if not identifier2:
+                    products_cache[(identifier1, None)] = settle_code
+                else:
+                    products_cache[(identifier1, identifier2)] = settle_code
+            
+            # 更新进度状态
+            import_progress[task_id].update({
+                'status': 'processing',
+                'message': '正在验证数据...'
+            })
+            
+            # 开始处理Excel数据
+            for index, row in df.iterrows():
+                row_num = index + 2  # Excel行号从2开始（第1行是标题）
+                row_errors = []
+                
+                # 更新处理进度
+                current_row = index + 1
+                import_progress[task_id].update({
+                    'current': current_row,
+                    'message': f'正在验证第 {current_row}/{total_rows} 行数据...'
+                })
+            
+                # 验证邮件类型
+                mail_class = str(row['邮件类型']).strip() if pd.notna(row['邮件类型']) else ''
+                if not mail_class:
+                    row_errors.append('邮件类型不能为空')
+                    mail_class = ''  # 确保有默认值
+                elif mail_class.upper() not in ['PY', 'TY']:
+                    row_errors.append('邮件类型只能是PY或TY')
+                    mail_class = ''  # 确保有默认值
+                else:
+                    mail_class = mail_class.upper()  # 转换为大写
+                
+                # 验证总包号
+                receptacle_no = str(row['总包号']).strip() if pd.notna(row['总包号']) else ''
+                if not receptacle_no:
+                    row_errors.append('总包号不能为空')
+                elif len(receptacle_no) != 29:
+                    row_errors.append('总包号长度必须为29位')
+                elif not re.match(r'^[A-Za-z]{15}\d{14}$', receptacle_no):
+                    row_errors.append('总包号格式不正确（前15位字母+后14位数字）')
+                else:
+                    receptacle_no = receptacle_no.upper()  # 转换为大写
+                
+                # 验证到达地
+                destination = str(row['到达地']).strip().upper() if pd.notna(row['到达地']) else ''
+                if not destination:
+                    row_errors.append('到达地不能为空')
+                elif not re.match(r'^[A-Z]{3}$', destination):
+                    row_errors.append('到达地格式不正确（3位大写字母）')
+            
+                # 验证时间字段
+                time_fields = {
+                    '接收时间': 'rec_time',
+                    '启运时间': 'uplift_time', 
+                    '到达时间': 'arrive_time',
+                    '交邮时间': 'deliver_time'
+                }
+                
+                parsed_times = {}
+                for field_name, field_key in time_fields.items():
+                    time_value = row[field_name]
+                    if pd.isna(time_value):
+                        row_errors.append(f'{field_name}不能为空')
+                    else:
+                        try:
+                            if isinstance(time_value, str):
+                                parsed_time = datetime.strptime(time_value, '%Y-%m-%d %H:%M:%S')
+                            else:
+                                parsed_time = pd.to_datetime(time_value).to_pydatetime()
+                            # 转换为YYYYMMDD格式的字符串
+                            parsed_times[field_key] = parsed_time.strftime('%Y%m%d')
+                        except:
+                            row_errors.append(f'{field_name}格式不正确，应为日期格式')
+                
+                # 检查文件内总包号重复
+                if receptacle_no and receptacle_no in seen_receptacle_nos:
+                    row_errors.append(f'总包号"{receptacle_no}"在文件中重复')
+                elif receptacle_no:
+                    seen_receptacle_nos.add(receptacle_no)
+                
+                # 检查数据库中是否已存在该总包号（使用缓存）
+                if receptacle_no and not row_errors:
+                    if receptacle_no in existing_receptacle_nos:
+                        row_errors.append(f'总包号"{receptacle_no}"已存在于数据库中')
+            
+                if row_errors:
+                    errors.extend([{'row': row_num, 'message': error} for error in row_errors])
+                else:
+                    # 通过到达地查询账单信息（使用缓存）
+                    bill_info_key = (destination, mail_class)
+                    bill_info = bill_info_cache.get(bill_info_key)
+                    
+                    if not bill_info:
+                        errors.append({
+                            'row': row_num, 
+                            'message': f'无法查询到到达地"{destination}"的账单信息'
+                        })
+                    else:
+                        # 查询邮件种类（使用缓存）
+                        identifier1 = receptacle_no[13:15]  # 总包号第14-15位
+                        identifier2 = receptacle_no[5:6]    # 总包号第6位
+                        
+                        # 先尝试只用identifier1查询
+                        settle_code = products_cache.get((identifier1, None))
+                        
+                        # 如果没找到且identifier2不为空，尝试组合查询
+                        if not settle_code and identifier2:
+                            settle_code = products_cache.get((identifier1, identifier2))
+                        
+                        if not settle_code:
+                            errors.append({
+                                'row': row_num,
+                                'message': f'无法查询到总包号"{receptacle_no}"对应的邮件种类信息'
+                            })
+                        else:
+                            # 计算重量（总包号后3位除以10）
+                            weight = int(receptacle_no[-3:]) / 10
+                            
+                            # 计算金额（确保类型兼容）
+                            charge = weight * float(bill_info[2]) if bill_info[2] else 0
+                            
+                            # 自动获取始发局和寄达局
+                            origin_office = receptacle_no[:6]   # 总包号第1-6位作为始发局
+                            dest_office = receptacle_no[6:12]   # 总包号第7-12位作为寄达局
+                        
+                            valid_data.append({
+                                'mail_class': mail_class,
+                                'receptacle_no': receptacle_no,
+                                'destination': destination,
+                                'origin_office': origin_office,  # 始发局
+                                'dest_office': dest_office,      # 寄达局
+                                'settle_code': settle_code,       # 邮件种类
+                                'rec_time': parsed_times['rec_time'],
+                                'uplift_time': parsed_times['uplift_time'],
+                                'arrive_time': parsed_times['arrive_time'],
+                                'deliver_time': parsed_times['deliver_time'],
+                                'mail_flightInfo': bill_info[0],  # flight_no → mail_flightInfo
+                                'mail_routeInfo': bill_info[1],   # route_info → mail_routeInfo
+                                'mail_quote': bill_info[2],       # quote → mail_quote
+                                'mail_carrCode': bill_info[3],    # carry_code → mail_carrCode
+                                'weight': weight,
+                                'charge': charge
+                            })
+        
+        finally:
+            cursor.close()
+            connection.close()
+        
+        # 如果有错误，返回错误信息
+        if errors:
+            import_progress[task_id].update({
+                'status': 'error',
+                'message': '数据验证失败，请检查Excel文件'
+            })
+            return jsonify({
+                'success': False,
+                'message': '数据验证失败，请检查Excel文件',
+                'errors': errors,
+                'task_id': task_id
+            })
+        
+        # 更新进度：开始插入数据
+        import_progress[task_id].update({
+            'status': 'inserting',
+            'message': f'数据验证完成，正在插入 {len(valid_data)} 条有效数据到数据库...'
+        })
+        
+        # 开始事务导入数据
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor()
+            try:
+                # 开始事务
+                connection.start_transaction()
+                
+                # 批量插入数据（重复检查已在验证阶段完成）
+                if valid_data:
+                    insert_values = []
+                    for data in valid_data:
+                        insert_values.append((
+                            data['mail_class'],     # 从Excel解析的邮件类型
+                            data['settle_code'],    # 查询得到的邮件种类
+                            data['receptacle_no'],
+                            data['origin_office'],  # 自动获取的始发局
+                            data['dest_office'],    # 自动获取的寄达局
+                            data['destination'],
+                            data['rec_time'],
+                            data['uplift_time'],
+                            data['arrive_time'],
+                            data['deliver_time'],
+                            data['mail_routeInfo'],
+                            data['mail_flightInfo'],
+                            data['weight'],
+                            data['mail_quote'],
+                            data['charge'],
+                            data['mail_carrCode']
+                        ))
+                    
+                    # 执行批量插入
+                    cursor.executemany("""
+                        INSERT INTO mail_data (
+                            Mail_class, mail_settle_code, mail_receptacleNo, mail_originPost, mail_destPost,
+                            mail_dest, mail_recTime, mail_upliftTime, mail_arriveTime,
+                            mail_deliverTime, mail_routeInfo, mail_flightInfo, mail_weight,
+                            mail_quote, mail_charge, mail_carrCode
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, insert_values)
+                    
+                    imported_count = len(valid_data)
+                
+                # 提交事务
+                connection.commit()
+                
+                # 更新进度：完成
+                import_progress[task_id].update({
+                    'status': 'completed',
+                    'current': total_rows,
+                    'message': f'导入完成！共成功导入 {imported_count} 条数据'
+                })
+                
+                return jsonify({
+                    'success': True,
+                    'message': '导入成功',
+                    'imported_count': imported_count,
+                    'task_id': task_id
+                })
+                
+            except Exception as e:
+                # 回滚事务
+                connection.rollback()
+                
+                # 更新进度：错误
+                import_progress[task_id].update({
+                    'status': 'error',
+                    'message': f'导入失败: {str(e)}'
+                })
+                
+                return jsonify({
+                    'success': False,
+                    'message': f'导入失败: {str(e)}',
+                    'task_id': task_id
+                })
+            finally:
+                cursor.close()
+                connection.close()
+        else:
+            import_progress[task_id].update({
+                'status': 'error',
+                'message': '数据库连接失败'
+            })
+            return jsonify({
+                'success': False, 
+                'message': '数据库连接失败',
+                'task_id': task_id
+            })
+            
+    except Exception as e:
+        if 'task_id' in locals():
+            import_progress[task_id].update({
+                'status': 'error',
+                'message': f'文件处理失败: {str(e)}'
+            })
+        return jsonify({
+            'success': False,
+            'message': f'文件处理失败: {str(e)}',
+            'task_id': task_id if 'task_id' in locals() else None
+        })
+
 @app.route('/logout')
 def logout():
     """退出登录"""
@@ -1891,10 +2471,13 @@ def init_bill_info_table():
             create_products_table = """
             CREATE TABLE IF NOT EXISTS products (
                 product_id INT AUTO_INCREMENT PRIMARY KEY,
-                product_code VARCHAR(50) UNIQUE NOT NULL COMMENT '产品代码',
+                product_code VARCHAR(50) UNIQUE COMMENT '产品代码',
                 product_name VARCHAR(200) NOT NULL COMMENT '产品名称',
-                product_type VARCHAR(50) NOT NULL COMMENT '产品类型',
-                unit_price DECIMAL(10,2) NOT NULL COMMENT '单价',
+                product_type VARCHAR(50) COMMENT '产品类型',
+                product_identifier1 VARCHAR(50) NOT NULL COMMENT '产品标识符1',
+                product_identifier2 VARCHAR(50) COMMENT '产品标识符2',
+                product_settle_code VARCHAR(50) NOT NULL COMMENT '产品结算代码',
+                unit_price DECIMAL(10,2) COMMENT '单价',
                 status VARCHAR(20) DEFAULT '启用' COMMENT '状态',
                 description TEXT COMMENT '产品描述',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -1913,10 +2496,10 @@ def init_bill_info_table():
                 mail_originPost VARCHAR(200) NOT NULL COMMENT '始发局',
                 mail_destPost VARCHAR(200) NOT NULL COMMENT '寄达局',
                 mail_dest VARCHAR(200) NOT NULL COMMENT '到达地',
-                mail_recTime DATETIME COMMENT '接收时间',
-                mail_upliftTime DATETIME COMMENT '启运时间',
-                mail_arriveTime DATETIME COMMENT '到达时间',
-                mail_deliverTime DATETIME COMMENT '交邮时间',
+                mail_recTime VARCHAR(8) COMMENT '接收时间(YYYYMMDD)',
+                mail_upliftTime VARCHAR(8) COMMENT '启运时间(YYYYMMDD)',
+                mail_arriveTime VARCHAR(8) COMMENT '到达时间(YYYYMMDD)',
+                mail_deliverTime VARCHAR(8) COMMENT '交邮时间(YYYYMMDD)',
                 mail_routeInfo VARCHAR(500) COMMENT '收费路由',
                 mail_flightInfo VARCHAR(200) COMMENT '航班',
                 mail_weight DECIMAL(10,3) COMMENT '重量',
@@ -1929,6 +2512,52 @@ def init_bill_info_table():
             """
             
             cursor.execute(create_mail_data_table)
+            
+            # 检查并添加Mail_class字段（如果不存在）
+            try:
+                cursor.execute("""
+                    ALTER TABLE mail_data 
+                    ADD COLUMN Mail_class VARCHAR(100) NOT NULL COMMENT '邮件类型' 
+                    AFTER mail_id
+                """)
+                print("已添加Mail_class字段")
+            except Exception as e:
+                if "Duplicate column name" in str(e):
+                    print("Mail_class字段已存在")
+                else:
+                    print(f"添加Mail_class字段时出错: {e}")
+            
+            # 检查并添加mail_settle_code字段（如果不存在）
+            try:
+                cursor.execute("""
+                    ALTER TABLE mail_data 
+                    ADD COLUMN mail_settle_code VARCHAR(50) COMMENT '邮件种类' 
+                    AFTER Mail_class
+                """)
+                print("已添加mail_settle_code字段")
+            except Exception as e:
+                if "Duplicate column name" in str(e):
+                    print("mail_settle_code字段已存在")
+                else:
+                    print(f"添加mail_settle_code字段时出错: {e}")
+            
+            # 修改时间字段类型为VARCHAR(8)以存储YYYYMMDD格式
+            time_fields_to_modify = [
+                'mail_recTime',
+                'mail_upliftTime', 
+                'mail_arriveTime',
+                'mail_deliverTime'
+            ]
+            
+            for field in time_fields_to_modify:
+                try:
+                    cursor.execute(f"""
+                        ALTER TABLE mail_data 
+                        MODIFY COLUMN {field} VARCHAR(8) COMMENT '{field.replace('mail_', '').replace('Time', '时间')}(YYYYMMDD)'
+                    """)
+                    print(f"已修改{field}字段类型为VARCHAR(8)")
+                except Exception as e:
+                    print(f"修改{field}字段类型时出错: {e}")
             
             if admin_role_exists == 0:
                 # 插入默认角色
