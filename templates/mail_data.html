@@ -1480,13 +1480,23 @@
                             ${data.message}
                     `;
                     
-                    if (data.errors && data.errors.length > 0) {
-                        errorHtml += '<br><br><strong>详细错误信息：</strong><ul>';
-                        data.errors.forEach(error => {
-                            errorHtml += `<li>第${error.row}行: ${error.message}</li>`;
-                        });
-                        errorHtml += '</ul>';
-                    }
+                    // 检查是否有详细错误信息
+                     const errors = data.errors || [];
+                     if (errors.length > 0) {
+                         errorHtml += '<br><br><strong style="color: #721c24;">详细错误信息：</strong>';
+                         errorHtml += '<div style="max-height: 300px; overflow-y: auto; margin-top: 10px; background-color: #fff; border: 1px solid #f5c6cb; border-radius: 4px; padding: 10px;">';
+                         errorHtml += '<ul style="margin: 0; padding-left: 20px; list-style-type: disc;">';
+                         errors.forEach(error => {
+                             errorHtml += `<li style="margin-bottom: 8px; line-height: 1.4; color: #721c24;"><strong>第${error.row}行:</strong> ${error.message}</li>`;
+                         });
+                         errorHtml += '</ul></div>';
+                         
+                         if (errors.length > 10) {
+                             errorHtml += `<p style="margin-top: 10px; color: #856404; font-size: 12px; font-style: italic; background-color: #fff3cd; padding: 5px; border-radius: 3px; border: 1px solid #ffeaa7;">💡 显示了前${Math.min(errors.length, 50)}个错误，共发现${errors.length}个错误。建议先修复这些问题后重新导入。</p>`;
+                         }
+                     } else {
+                         errorHtml += '<br><br><div style="background-color: #fff3cd; border: 1px solid #ffeaa7; color: #856404; padding: 10px; border-radius: 4px; margin-top: 10px;"><em>⚠️ 未获取到详细错误信息，请检查Excel文件格式是否正确，确保包含所有必需字段。</em></div>';
+                     }
                     
                     errorHtml += '</div>';
                     document.getElementById('importResult').innerHTML = errorHtml;

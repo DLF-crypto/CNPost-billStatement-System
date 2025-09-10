@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>中邮账单管理系统 - 主页</title>
+    <title>中邮账单管理系统 - 仪表盘</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="{{ url_for('static', filename='js/chart.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/chartjs-adapter-date-fns.bundle.min.js') }}"></script>
 </head>
 <body>
     <div class="dashboard-layout">
@@ -124,86 +126,757 @@
                     {% endif %}
                 {% endwith %}
                 
-                <!-- 欢迎卡片 -->
-                <div class="welcome-card">
-                    <h2>
-                        <i class="fas fa-home"></i>
-                        欢迎使用中邮账单管理系统
-                    </h2>
-                    <p>您已成功登录系统。请从左侧菜单选择功能模块开始使用。</p>
-                    <p>当前登录用户：<strong>{{ username }}</strong></p>
-                    <p>登录时间：<span id="current-time"></span></p>
+                <!-- 仪表盘标题 -->
+                <div class="content-header">
+                    <h2><i class="fas fa-tachometer-alt"></i> 数据分析仪表盘</h2>
+                    <p>邮件数据统计分析与可视化展示</p>
                 </div>
                 
-                <!-- 快捷功能卡片 -->
-                <div class="quick-actions">
-                    <div class="action-card">
-                        <i class="fas fa-users"></i>
-                        <h3>员工管理</h3>
-                        <p>管理系统用户和员工信息</p>
+                <!-- 统计卡片 -->
+                <div class="stats-cards">
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-envelope"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3 id="totalMails">-</h3>
+                            <p>总邮件数</p>
+                        </div>
                     </div>
-                    <div class="action-card">
-                        <i class="fas fa-envelope-open-text"></i>
-                        <h3>邮件数据</h3>
-                        <p>查看和管理邮件相关数据</p>
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-weight-hanging"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3 id="totalWeight">-</h3>
+                            <p>总重量 (kg)</p>
+                        </div>
                     </div>
-                    <div class="action-card">
-                        <i class="fas fa-file-invoice-dollar"></i>
-                        <h3>账单管理</h3>
-                        <p>处理和管理各类账单信息</p>
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-dollar-sign"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3 id="totalAmount">-</h3>
+                            <p>总金额 (¥)</p>
+                        </div>
                     </div>
-                    <div class="action-card">
-                        <i class="fas fa-chart-bar"></i>
-                        <h3>分析报表</h3>
-                        <p>查看统计数据和分析报告</p>
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-map-marker-alt"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3 id="totalDestinations">-</h3>
+                            <p>到达地数量</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 图表区域 -->
+                <div class="charts-container">
+                    <!-- 月度对比图表 -->
+                    <div class="chart-section">
+                        <div class="chart-header">
+                            <h3><i class="fas fa-chart-bar"></i> 月度数据对比</h3>
+                            <p>最近6个月的总金额和总重量对比分析</p>
+                        </div>
+                        <div class="chart-wrapper">
+                            <canvas id="monthlyChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <!-- 到达地重量占比分析 -->
+                    <div class="chart-section">
+                        <div class="chart-header">
+                            <h3><i class="fas fa-chart-pie"></i> 到达地重量占比分析</h3>
+                            <div class="chart-controls">
+                                <label for="monthSelect">选择月份:</label>
+                                <select id="monthSelect" onchange="updatePieChart()">
+                                    <option value="">请选择月份</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="chart-wrapper">
+                            <canvas id="pieChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <!-- 多到达地对比分析 -->
+                    <div class="chart-section full-width">
+                        <div class="chart-header">
+                            <h3><i class="fas fa-chart-line"></i> 多到达地对比分析</h3>
+                            <div class="chart-controls">
+                                <label>选择到达地:</label>
+                                <div class="destination-select-container">
+                                    <div id="destinationCheckboxList" class="destination-checkbox-list">
+                                        <!-- 复选框列表将通过JavaScript动态生成 -->
+                                    </div>
+                                    <div id="selectedDestinations" class="selected-destinations"></div>
+                                </div>
+                                <button onclick="clearDestinationSelection()" class="btn btn-secondary">清空选择</button>
+                            </div>
+                        </div>
+                        <div class="chart-wrapper">
+                            <canvas id="comparisonChart"></canvas>
+                        </div>
                     </div>
                 </div>
             </main>
         </div>
     </div>
     
-    <script>
-        // 显示当前时间
-        function updateTime() {
-            const now = new Date();
-            const timeString = now.toLocaleString('zh-CN', {
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit'
-            });
-            document.getElementById('current-time').textContent = timeString;
+    <style>
+        .stats-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
         }
         
-        // 菜单展开/收起功能
-        function toggleSubmenu(element) {
-            const submenu = element.nextElementSibling;
-            const arrow = element.querySelector('.submenu-arrow');
-            const isExpanded = submenu.style.maxHeight && submenu.style.maxHeight !== '0px';
+        .stat-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 20px rgba(0,0,0,0.15);
+        }
+        
+        .stat-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 15px;
+            font-size: 24px;
+            color: white;
+        }
+        
+        .stat-card:nth-child(1) .stat-icon { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .stat-card:nth-child(2) .stat-icon { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+        .stat-card:nth-child(3) .stat-icon { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+        .stat-card:nth-child(4) .stat-icon { background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); }
+        
+        .stat-info h3 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .stat-info p {
+            margin: 5px 0 0 0;
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .charts-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .chart-section {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .chart-section.full-width {
+            grid-column: 1 / -1;
+        }
+        
+        .chart-header {
+            margin-bottom: 20px;
+            border-bottom: 2px solid #f0f0f0;
+            padding-bottom: 15px;
+        }
+        
+        .chart-header h3 {
+            margin: 0 0 5px 0;
+            color: #333;
+            font-size: 18px;
+        }
+        
+        .chart-header p {
+            margin: 0;
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .chart-controls {
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .chart-controls label {
+            font-weight: 500;
+            color: #333;
+        }
+        
+        .chart-controls select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: white;
+            font-size: 14px;
+            min-width: 200px;
+        }
+        
+        /* 复选框列表样式 */
+        .destination-checkbox-list {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: white;
+            padding: 8px;
+            min-width: 200px;
+        }
+        
+        .destination-checkbox-item {
+            display: flex;
+            align-items: center;
+            padding: 6px 8px;
+            margin: 2px 0;
+            border-radius: 3px;
+            transition: background-color 0.2s ease;
+        }
+        
+        .destination-checkbox-item:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .destination-checkbox-item input[type="checkbox"] {
+            margin-right: 8px;
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+        
+        .destination-checkbox-item label {
+            cursor: pointer;
+            font-size: 14px;
+            color: #333;
+            flex: 1;
+            margin: 0;
+        }
+        
+        /* 多选下拉框样式优化 */
+        .destination-select-container {
+            position: relative;
+            display: inline-block;
+        }
+        
+        .selected-destinations {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-top: 10px;
+        }
+        
+        .destination-tag {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 8px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: 500;
+            color: white;
+            margin: 2px;
+        }
+        
+        .destination-tag .remove-tag {
+            margin-left: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .destination-tag.color-0 { background-color: #FF6384; }
+        .destination-tag.color-1 { background-color: #36A2EB; }
+        .destination-tag.color-2 { background-color: #FFCE56; }
+        .destination-tag.color-3 { background-color: #4BC0C0; }
+        .destination-tag.color-4 { background-color: #9966FF; }
+        .destination-tag.color-5 { background-color: #FF9F40; }
+        
+        .chart-wrapper {
+            position: relative;
+            height: 400px;
+        }
+        
+        .chart-section.full-width .chart-wrapper {
+            height: 500px;
+        }
+        
+        .content-header {
+            margin-bottom: 30px;
+        }
+        
+        .content-header h2 {
+            margin: 0 0 5px 0;
+            color: #333;
+        }
+        
+        .content-header p {
+            margin: 0;
+            color: #666;
+        }
+        
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s ease;
+        }
+        
+        .btn-secondary {
+            background-color: #6c757d;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background-color: #5a6268;
+        }
+        
+        @media (max-width: 768px) {
+            .charts-container {
+                grid-template-columns: 1fr;
+            }
             
-            if (isExpanded) {
-                // 收起菜单
-                submenu.style.maxHeight = '0px';
-                if (arrow) {
-                    arrow.classList.remove('fa-chevron-down');
-                    arrow.classList.add('fa-chevron-right');
+            .stats-cards {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+    
+    <script>
+        let monthlyChart, pieChart, comparisonChart;
+        let dashboardData = {};
+        
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDashboardData();
+            initializeCharts();
+            setupMenuFunctionality();
+        });
+        
+        // 加载仪表盘数据
+        async function loadDashboardData() {
+            try {
+                const response = await fetch('/api/dashboard_stats');
+                const result = await response.json();
+                
+                if (result.success) {
+                    dashboardData = result.data;
+                    updateStatCards();
+                    updateMonthlyChart();
+                    populateMonthSelect();
+                    populateDestinationSelect();
+                } else {
+                    console.error('获取数据失败:', result.message);
                 }
-                localStorage.setItem('submenuExpanded', 'false');
-            } else {
-                // 展开菜单
-                submenu.style.maxHeight = submenu.scrollHeight + 'px';
-                if (arrow) {
-                    arrow.classList.remove('fa-chevron-right');
-                    arrow.classList.add('fa-chevron-down');
-                }
-                localStorage.setItem('submenuExpanded', 'true');
+            } catch (error) {
+                console.error('加载数据时出错:', error);
             }
         }
         
-        // 页面加载时检查菜单状态
-        document.addEventListener('DOMContentLoaded', function() {
+        // 更新统计卡片
+        function updateStatCards() {
+            const { monthly_stats, destination_stats, mail_class_stats } = dashboardData;
+            
+            // 计算总计数据
+            let totalMails = 0, totalWeight = 0, totalAmount = 0;
+            
+            monthly_stats.forEach(item => {
+                totalMails += item.total_count || 0;
+                totalWeight += parseFloat(item.total_weight || 0);
+                totalAmount += parseFloat(item.total_amount || 0);
+            });
+            
+            document.getElementById('totalMails').textContent = totalMails.toLocaleString();
+            document.getElementById('totalWeight').textContent = totalWeight.toFixed(1);
+            document.getElementById('totalAmount').textContent = totalAmount.toFixed(2);
+            document.getElementById('totalDestinations').textContent = destination_stats.length;
+        }
+        
+        // 初始化图表
+        function initializeCharts() {
+            // 月度对比图表
+            const monthlyCtx = document.getElementById('monthlyChart').getContext('2d');
+            monthlyChart = new Chart(monthlyCtx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: '总金额 (¥)',
+                        data: [],
+                        backgroundColor: 'rgba(54, 162, 235, 0.8)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1,
+                        yAxisID: 'y'
+                    }, {
+                        label: '总重量 (kg)',
+                        data: [],
+                        backgroundColor: 'rgba(255, 99, 132, 0.8)',
+                        borderColor: 'rgba(255, 99, 132, 1)',
+                        borderWidth: 1,
+                        yAxisID: 'y1'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: '金额 (¥)'
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: '重量 (kg)'
+                            },
+                            grid: {
+                                drawOnChartArea: false,
+                            },
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    }
+                }
+            });
+            
+            // 饼状图
+            const pieCtx = document.getElementById('pieChart').getContext('2d');
+            pieChart = new Chart(pieCtx, {
+                type: 'pie',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        data: [],
+                        backgroundColor: [
+                            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0',
+                            '#9966FF', '#FF9F40', '#FF6384', '#C9CBCF',
+                            '#4BC0C0', '#FF6384', '#36A2EB', '#FFCE56'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.label || '';
+                                    const value = context.parsed;
+                                    const total = context.dataset.data.reduce((sum, val) => sum + val, 0);
+                                    const percentage = ((value / total) * 100).toFixed(1);
+                                    return `${label}: ${value.toFixed(1)}kg (${percentage}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // 对比图表
+            const comparisonCtx = document.getElementById('comparisonChart').getContext('2d');
+            comparisonChart = new Chart(comparisonCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: []
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: '重量 (kg)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    }
+                }
+            });
+        }
+        
+        // 更新月度图表
+        function updateMonthlyChart() {
+            const { monthly_stats } = dashboardData;
+            
+            const labels = monthly_stats.map(item => item.month).reverse();
+            const amounts = monthly_stats.map(item => parseFloat(item.total_amount || 0)).reverse();
+            const weights = monthly_stats.map(item => parseFloat(item.total_weight || 0)).reverse();
+            
+            monthlyChart.data.labels = labels;
+            monthlyChart.data.datasets[0].data = amounts;
+            monthlyChart.data.datasets[1].data = weights;
+            monthlyChart.update();
+        }
+        
+        // 填充月份选择器
+        function populateMonthSelect() {
+            const { monthly_stats } = dashboardData;
+            const select = document.getElementById('monthSelect');
+            
+            // 获取当前日期并计算上个月
+            const now = new Date();
+            const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            const lastMonthStr = `${lastMonth.getFullYear()}年${String(lastMonth.getMonth() + 1).padStart(2, '0')}月`;
+            
+            let defaultMonth = null;
+            
+            monthly_stats.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item.month;
+                option.textContent = item.month;
+                select.appendChild(option);
+                
+                // 检查是否为上个月数据
+                if (item.month === lastMonthStr) {
+                    defaultMonth = item.month;
+                }
+            });
+            
+            // 如果找到上个月数据，设为默认选择；否则选择最新的月份
+            if (defaultMonth) {
+                select.value = defaultMonth;
+            } else if (monthly_stats.length > 0) {
+                select.value = monthly_stats[0].month; // 选择第一个月份（最新）
+            }
+            
+            // 自动更新饼状图
+            if (select.value) {
+                updatePieChart();
+            }
+        }
+        
+        // 填充到达地选择器
+        function populateDestinationSelect() {
+            const { destination_stats } = dashboardData;
+            const checkboxList = document.getElementById('destinationCheckboxList');
+            
+            destination_stats.forEach(item => {
+                const checkboxItem = document.createElement('div');
+                checkboxItem.className = 'destination-checkbox-item';
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.id = `dest_${item.destination}`;
+                checkbox.value = item.destination;
+                checkbox.addEventListener('change', updateComparisonChart);
+                
+                const label = document.createElement('label');
+                label.htmlFor = `dest_${item.destination}`;
+                label.textContent = item.destination;
+                
+                checkboxItem.appendChild(checkbox);
+                checkboxItem.appendChild(label);
+                checkboxList.appendChild(checkboxItem);
+            });
+        }
+        
+        // 更新饼状图
+        async function updatePieChart() {
+            const month = document.getElementById('monthSelect').value;
+            if (!month) return;
+            
+            try {
+                const response = await fetch(`/api/destination_weight_by_month?month=${month}`);
+                const result = await response.json();
+                
+                if (result.success) {
+                    const data = result.data;
+                    const labels = data.map(item => item.destination);
+                    const weights = data.map(item => parseFloat(item.total_weight || 0));
+                    
+                    pieChart.data.labels = labels;
+                    pieChart.data.datasets[0].data = weights;
+                    pieChart.update();
+                }
+            } catch (error) {
+                console.error('更新饼状图时出错:', error);
+            }
+        }
+        
+        // 更新选中目标地标签显示
+        function updateSelectedDestinationTags() {
+            const checkboxes = document.querySelectorAll('#destinationCheckboxList input[type="checkbox"]:checked');
+            const tagsContainer = document.getElementById('selectedDestinations');
+            
+            tagsContainer.innerHTML = '';
+            
+            Array.from(checkboxes).forEach((checkbox, index) => {
+                const tag = document.createElement('div');
+                tag.className = `destination-tag color-${index % 6}`;
+                tag.innerHTML = `
+                    ${checkbox.value}
+                    <span class="remove-tag" onclick="removeDestination('${checkbox.value}')">&times;</span>
+                `;
+                tagsContainer.appendChild(tag);
+            });
+        }
+        
+        // 移除选中的目标地
+        function removeDestination(destination) {
+            const checkbox = document.getElementById(`dest_${destination}`);
+            if (checkbox) {
+                checkbox.checked = false;
+                updateComparisonChart();
+            }
+        }
+        
+        // 更新对比图表
+        async function updateComparisonChart() {
+            const checkboxes = document.querySelectorAll('#destinationCheckboxList input[type="checkbox"]:checked');
+            const selectedDestinations = Array.from(checkboxes).map(checkbox => checkbox.value);
+            
+            // 更新标签显示
+            updateSelectedDestinationTags();
+            
+            if (selectedDestinations.length === 0) {
+                comparisonChart.data.labels = [];
+                comparisonChart.data.datasets = [];
+                comparisonChart.update();
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/monthly_comparison_by_destinations', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        destinations: selectedDestinations
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    const data = result.data;
+                    
+                    // 组织数据
+                    const monthsSet = new Set();
+                    const destinationData = {};
+                    
+                    data.forEach(item => {
+                        monthsSet.add(item.month);
+                        if (!destinationData[item.destination]) {
+                            destinationData[item.destination] = {};
+                        }
+                        destinationData[item.destination][item.month] = parseFloat(item.total_weight || 0);
+                    });
+                    
+                    const months = Array.from(monthsSet).sort();
+                    const datasets = [];
+                    
+                    const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40'];
+                    
+                    // 按照选择顺序排序目标地，确保颜色与标签一致
+                    const orderedDestinations = selectedDestinations.filter(dest => destinationData[dest]);
+                    
+                    orderedDestinations.forEach((destination, colorIndex) => {
+                        const weights = months.map(month => destinationData[destination][month] || 0);
+                        
+                        datasets.push({
+                            label: destination,
+                            data: weights,
+                            borderColor: colors[colorIndex % colors.length],
+                            backgroundColor: colors[colorIndex % colors.length] + '20',
+                            fill: false,
+                            tension: 0.1,
+                            borderWidth: 2,
+                            pointRadius: 4,
+                            pointHoverRadius: 6
+                        });
+                    });
+                    
+                    comparisonChart.data.labels = months;
+                    comparisonChart.data.datasets = datasets;
+                    comparisonChart.update();
+                }
+            } catch (error) {
+                console.error('更新对比图表时出错:', error);
+            }
+        }
+        
+        // 清空到达地选择
+        function clearDestinationSelection() {
+            const checkboxes = document.querySelectorAll('#destinationCheckboxList input[type="checkbox"]');
+            checkboxes.forEach(checkbox => checkbox.checked = false);
+            const tagsContainer = document.getElementById('selectedDestinations');
+            tagsContainer.innerHTML = '';
+            updateComparisonChart();
+        }
+        
+        // 菜单功能
+        function setupMenuFunctionality() {
+            // 菜单展开/收起功能
+            window.toggleSubmenu = function(element) {
+                const submenu = element.nextElementSibling;
+                const arrow = element.querySelector('.submenu-arrow');
+                const isExpanded = submenu.style.maxHeight && submenu.style.maxHeight !== '0px';
+                
+                if (isExpanded) {
+                    submenu.style.maxHeight = '0px';
+                    if (arrow) {
+                        arrow.classList.remove('fa-chevron-down');
+                        arrow.classList.add('fa-chevron-right');
+                    }
+                    localStorage.setItem('submenuExpanded', 'false');
+                } else {
+                    submenu.style.maxHeight = submenu.scrollHeight + 'px';
+                    if (arrow) {
+                        arrow.classList.remove('fa-chevron-right');
+                        arrow.classList.add('fa-chevron-down');
+                    }
+                    localStorage.setItem('submenuExpanded', 'true');
+                }
+            };
+            
+            // 页面加载时检查菜单状态
             const submenu = document.querySelector('.submenu');
             const arrow = document.querySelector('.submenu-arrow');
             const isExpanded = localStorage.getItem('submenuExpanded') === 'true';
@@ -222,198 +895,86 @@
                 }
             }
             
-            // 二级菜单点击时设置展开状态
-            const submenuLinks = document.querySelectorAll('.submenu-link');
-            submenuLinks.forEach(function(link) {
-                link.addEventListener('click', function(e) {
-                    localStorage.setItem('submenuExpanded', 'true');
+            // 用户下拉菜单交互
+            const userDropdown = document.querySelector('.user-dropdown');
+            const userButton = document.querySelector('.user-button');
+            const dropdownContent = document.querySelector('.dropdown-content');
+            
+            if (userDropdown && userButton && dropdownContent) {
+                let isDropdownOpen = false;
+                let mouseLeaveTimer = null;
+                
+                userButton.addEventListener('click', function(e) {
                     e.stopPropagation();
-                });
-            });
-        });
-        
-        // 页面加载时显示时间并每秒更新
-        updateTime();
-        setInterval(updateTime, 1000);
-        
-        // 自动隐藏提示消息
-        setTimeout(function() {
-            const alerts = document.querySelectorAll('.alert');
-            alerts.forEach(function(alert) {
-                alert.style.opacity = '0';
-                setTimeout(function() {
-                    alert.remove();
-                }, 300);
-            });
-        }, 3000);
-        
-        // 用户下拉菜单交互
-        const userDropdown = document.querySelector('.user-dropdown');
-        const userButton = document.querySelector('.user-button');
-        const dropdownContent = document.querySelector('.dropdown-content');
-        
-        if (userDropdown && userButton && dropdownContent) {
-            let isDropdownOpen = false;
-            let mouseLeaveTimer = null;
-            
-            // 点击用户按钮切换下拉菜单
-            userButton.addEventListener('click', function(e) {
-                e.stopPropagation();
-                isDropdownOpen = !isDropdownOpen;
-                dropdownContent.classList.toggle('show', isDropdownOpen);
-                // 清除可能存在的延时关闭
-                if (mouseLeaveTimer) {
-                    clearTimeout(mouseLeaveTimer);
-                    mouseLeaveTimer = null;
-                }
-            });
-            
-            // 鼠标进入用户按钮区域时显示下拉菜单
-            userButton.addEventListener('mouseenter', function() {
-                if (!isDropdownOpen) {
-                    isDropdownOpen = true;
-                    dropdownContent.classList.add('show');
-                }
-                // 清除延时关闭
-                if (mouseLeaveTimer) {
-                    clearTimeout(mouseLeaveTimer);
-                    mouseLeaveTimer = null;
-                }
-            });
-            
-            // 鼠标进入下拉内容区域时保持显示
-            dropdownContent.addEventListener('mouseenter', function() {
-                // 清除延时关闭
-                if (mouseLeaveTimer) {
-                    clearTimeout(mouseLeaveTimer);
-                    mouseLeaveTimer = null;
-                }
-            });
-            
-            // 鼠标离开用户按钮时设置延时关闭
-            userButton.addEventListener('mouseleave', function() {
-                mouseLeaveTimer = setTimeout(function() {
-                    isDropdownOpen = false;
-                    dropdownContent.classList.remove('show');
-                }, 200); // 200ms延时，给用户时间移动到下拉框
-            });
-            
-            // 鼠标离开下拉内容区域时关闭
-            dropdownContent.addEventListener('mouseleave', function() {
-                mouseLeaveTimer = setTimeout(function() {
-                    isDropdownOpen = false;
-                    dropdownContent.classList.remove('show');
-                }, 200);
-            });
-            
-            // 点击页面其他地方时隐藏下拉菜单
-            document.addEventListener('click', function(e) {
-                if (!userDropdown.contains(e.target)) {
-                    isDropdownOpen = false;
-                    dropdownContent.classList.remove('show');
+                    isDropdownOpen = !isDropdownOpen;
+                    dropdownContent.classList.toggle('show', isDropdownOpen);
                     if (mouseLeaveTimer) {
                         clearTimeout(mouseLeaveTimer);
                         mouseLeaveTimer = null;
                     }
-                }
-            });
+                });
+                
+                userButton.addEventListener('mouseenter', function() {
+                    if (!isDropdownOpen) {
+                        isDropdownOpen = true;
+                        dropdownContent.classList.add('show');
+                    }
+                    if (mouseLeaveTimer) {
+                        clearTimeout(mouseLeaveTimer);
+                        mouseLeaveTimer = null;
+                    }
+                });
+                
+                dropdownContent.addEventListener('mouseenter', function() {
+                    if (mouseLeaveTimer) {
+                        clearTimeout(mouseLeaveTimer);
+                        mouseLeaveTimer = null;
+                    }
+                });
+                
+                userButton.addEventListener('mouseleave', function() {
+                    mouseLeaveTimer = setTimeout(function() {
+                        isDropdownOpen = false;
+                        dropdownContent.classList.remove('show');
+                    }, 200);
+                });
+                
+                dropdownContent.addEventListener('mouseleave', function() {
+                    mouseLeaveTimer = setTimeout(function() {
+                        isDropdownOpen = false;
+                        dropdownContent.classList.remove('show');
+                    }, 200);
+                });
+                
+                document.addEventListener('click', function(e) {
+                    if (!userDropdown.contains(e.target)) {
+                        isDropdownOpen = false;
+                        dropdownContent.classList.remove('show');
+                        if (mouseLeaveTimer) {
+                            clearTimeout(mouseLeaveTimer);
+                            mouseLeaveTimer = null;
+                        }
+                    }
+                });
+            }
+            
+            // 自动隐藏提示消息
+            setTimeout(function() {
+                const alerts = document.querySelectorAll('.alert');
+                alerts.forEach(function(alert) {
+                    alert.style.opacity = '0';
+                    setTimeout(function() {
+                        alert.remove();
+                    }, 300);
+                });
+            }, 3000);
         }
         
         // 显示修改密码模态框
         function showChangePasswordModal() {
-            document.getElementById('changePasswordModal').style.display = 'block';
-        }
-        
-        // 关闭模态框
-        function closeModal(modalId) {
-            document.getElementById(modalId).style.display = 'none';
-            // 清空表单
-            if (modalId === 'changePasswordModal') {
-                document.getElementById('changePasswordForm').reset();
-            }
-        }
-        
-        // 修改密码
-        function changePassword() {
-            const currentPassword = document.getElementById('currentPassword').value;
-            const newPassword = document.getElementById('newPassword').value;
-            const confirmPassword = document.getElementById('confirmPassword').value;
-            
-            // 前端验证
-            if (!currentPassword || !newPassword || !confirmPassword) {
-                alert('请填写所有密码字段');
-                return;
-            }
-            
-            if (newPassword !== confirmPassword) {
-                alert('新密码和确认密码不一致');
-                return;
-            }
-            
-            if (newPassword.length < 6) {
-                alert('新密码长度至少6位');
-                return;
-            }
-            
-            // 发送请求
-            fetch('/change_password', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    current_password: currentPassword,
-                    new_password: newPassword
-                })
-            })
-            .then(response => response.json())
-            .then(result => {
-                if (result.success) {
-                    alert(result.message);
-                    closeModal('changePasswordModal');
-                } else {
-                    alert('错误：' + result.message);
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('操作失败，请稍后重试');
-            });
+            // 这里可以添加修改密码的模态框逻辑
+            alert('修改密码功能待实现');
         }
     </script>
-    
-    <!-- 修改密码模态框 -->
-    <div id="changePasswordModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3><i class="fas fa-key"></i> 修改密码</h3>
-                <span class="close" onclick="closeModal('changePasswordModal')">&times;</span>
-            </div>
-            <div class="modal-body">
-                <form id="changePasswordForm">
-                    <div class="form-group">
-                        <label for="currentPassword">当前密码 <span class="required">*</span></label>
-                        <input type="password" id="currentPassword" name="current_password" required placeholder="请输入当前密码">
-                    </div>
-                    <div class="form-group">
-                        <label for="newPassword">新密码 <span class="required">*</span></label>
-                        <input type="password" id="newPassword" name="new_password" required placeholder="请输入新密码（至少6位）">
-                    </div>
-                    <div class="form-group">
-                        <label for="confirmPassword">确认新密码 <span class="required">*</span></label>
-                        <input type="password" id="confirmPassword" name="confirm_password" required placeholder="请再次输入新密码">
-                    </div>
-                    <div class="alert alert-info">
-                        <i class="fas fa-info-circle"></i>
-                        密码长度至少6位，建议包含字母和数字
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('changePasswordModal')">取消</button>
-                <button type="button" class="btn btn-primary" onclick="changePassword()">确认修改</button>
-            </div>
-        </div>
-    </div>
 </body>
 </html>

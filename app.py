@@ -2317,7 +2317,8 @@ def import_excel_mail_data():
         if errors:
             import_progress[task_id].update({
                 'status': 'error',
-                'message': '数据验证失败，请检查Excel文件'
+                'message': '数据验证失败，请检查Excel文件',
+                'errors': errors  # 保存详细错误信息到进度数据中
             })
             return jsonify({
                 'success': False,
@@ -2432,6 +2433,185 @@ def import_excel_mail_data():
             'message': f'文件处理失败: {str(e)}',
             'task_id': task_id if 'task_id' in locals() else None
         })
+
+# 仪表盘数据统计API
+@app.route('/api/dashboard_stats', methods=['GET'])
+def get_dashboard_stats():
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': '数据库连接失败'})
+        
+        cursor = connection.cursor(dictionary=True)
+        
+        # 获取最近6个月的月度统计数据（使用优化后的mail_date字段）
+        monthly_stats_query = """
+            SELECT 
+                DATE_FORMAT(mail_date, '%Y-%m') as month,
+                ROUND(SUM(mail_charge), 2) as total_amount,
+                ROUND(SUM(mail_weight), 3) as total_weight,
+                COUNT(*) as total_count
+            FROM mail_data 
+            WHERE mail_date IS NOT NULL AND mail_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+            GROUP BY DATE_FORMAT(mail_date, '%Y-%m')
+            ORDER BY month DESC
+            LIMIT 6
+        """
+        
+        cursor.execute(monthly_stats_query)
+        monthly_stats = cursor.fetchall()
+        
+        # 获取到达地统计数据（限制结果集提高性能）
+        destination_stats_query = """
+            SELECT 
+                mail_dest as destination,
+                ROUND(SUM(mail_weight), 3) as total_weight,
+                ROUND(SUM(mail_charge), 2) as total_amount,
+                COUNT(*) as total_count
+            FROM mail_data 
+            WHERE mail_dest IS NOT NULL AND mail_dest != ''
+            GROUP BY mail_dest
+            ORDER BY total_weight DESC
+            LIMIT 15
+        """
+        
+        cursor.execute(destination_stats_query)
+        destination_stats = cursor.fetchall()
+        
+        # 获取邮件类型统计（限制结果集）
+        mail_class_stats_query = """
+            SELECT 
+                Mail_class,
+                ROUND(SUM(mail_weight), 3) as total_weight,
+                ROUND(SUM(mail_charge), 2) as total_amount,
+                COUNT(*) as total_count
+            FROM mail_data 
+            WHERE Mail_class IS NOT NULL AND Mail_class != ''
+            GROUP BY Mail_class
+            ORDER BY total_count DESC
+            LIMIT 10
+        """
+        
+        cursor.execute(mail_class_stats_query)
+        mail_class_stats = cursor.fetchall()
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'monthly_stats': monthly_stats,
+                'destination_stats': destination_stats,
+                'mail_class_stats': mail_class_stats
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'获取统计数据失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if 'connection' in locals() and connection:
+            connection.close()
+
+# 按月份获取到达地重量占比API
+@app.route('/api/destination_weight_by_month', methods=['GET'])
+def get_destination_weight_by_month():
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        month = request.args.get('month')  # 格式: YYYY-MM
+        if not month:
+            return jsonify({'success': False, 'message': '请提供月份参数'})
+        
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': '数据库连接失败'})
+        
+        cursor = connection.cursor(dictionary=True)
+        
+        query = """
+            SELECT 
+                mail_dest as destination,
+                ROUND(SUM(mail_weight), 3) as total_weight,
+                ROUND(SUM(mail_charge), 2) as total_amount,
+                COUNT(*) as total_count
+            FROM mail_data 
+            WHERE DATE_FORMAT(mail_date, '%Y-%m') = %s
+            GROUP BY mail_dest
+            ORDER BY total_weight DESC
+            LIMIT 20
+        """
+        
+        cursor.execute(query, (month,))
+        results = cursor.fetchall()
+        
+        return jsonify({
+            'success': True,
+            'data': results
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'获取数据失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if 'connection' in locals() and connection:
+            connection.close()
+
+# 按到达地获取月度对比数据API
+@app.route('/api/monthly_comparison_by_destinations', methods=['POST'])
+def get_monthly_comparison_by_destinations():
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        data = request.get_json()
+        destinations = data.get('destinations', [])
+        
+        if not destinations:
+            return jsonify({'success': False, 'message': '请选择至少一个到达地'})
+        
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': '数据库连接失败'})
+        
+        cursor = connection.cursor(dictionary=True)
+        
+        # 构建查询条件
+        placeholders = ','.join(['%s'] * len(destinations))
+        
+        query = f"""
+            SELECT 
+                mail_dest as destination,
+                DATE_FORMAT(mail_date, '%Y-%m') as month,
+                ROUND(SUM(mail_weight), 3) as total_weight,
+                ROUND(SUM(mail_charge), 2) as total_amount,
+                COUNT(*) as total_count
+            FROM mail_data 
+            WHERE mail_dest IN ({placeholders})
+            AND mail_date IS NOT NULL AND mail_date >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+            GROUP BY mail_dest, DATE_FORMAT(mail_date, '%Y-%m')
+            ORDER BY month DESC, destination
+        """
+        
+        cursor.execute(query, destinations)
+        results = cursor.fetchall()
+        
+        return jsonify({
+            'success': True,
+            'data': results
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'获取数据失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if 'connection' in locals() and connection:
+            connection.close()
 
 # 生成账单API
 @app.route('/api/generate_bill', methods=['POST'])
