@@ -157,6 +157,7 @@
                                                     'dashboard': '仪表盘',
                                                     'employees': '员工管理', 
                                                     'roles': '角色管理',
+                                                    'products': '产品信息管理',
                                                     'mail_data': '邮件数据管理',
                                                     'bill_management': '账单管理',
                                                     'reports': '分析报表'
@@ -222,6 +223,10 @@
                                 <span>角色管理</span>
                             </label>
                             <label class="permission-item">
+                                <input type="checkbox" name="permissions" value="products">
+                                <span>产品信息管理</span>
+                            </label>
+                            <label class="permission-item">
                                 <input type="checkbox" name="permissions" value="mail_data">
                                 <span>邮件数据管理</span>
                             </label>
@@ -273,6 +278,10 @@
                             <label class="permission-item">
                                 <input type="checkbox" name="editPermissions" value="roles">
                                 <span>角色管理</span>
+                            </label>
+                            <label class="permission-item">
+                                <input type="checkbox" name="editPermissions" value="products">
+                                <span>产品信息管理</span>
                             </label>
                             <label class="permission-item">
                                 <input type="checkbox" name="editPermissions" value="mail_data">
