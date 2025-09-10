@@ -91,9 +91,18 @@
                         
                         {% if 'bill_management' in permissions %}
                         <li class="nav-item">
-                            <a href="#" class="nav-link">
+                            <a href="{{ url_for('bill_management') }}" class="nav-link">
                                 <i class="fas fa-calculator"></i>
                                 <span>账单管理</span>
+                            </a>
+                        </li>
+                        {% endif %}
+                        
+                        {% if 'reports' in permissions %}
+                        <li class="nav-item">
+                            <a href="#" class="nav-link">
+                                <i class="fas fa-chart-bar"></i>
+                                <span>分析报表</span>
                             </a>
                         </li>
                         {% endif %}
@@ -192,7 +201,6 @@
                                 <th>费率</th>
                                 <th>金额</th>
                                 <th>运能编码</th>
-                                <th>操作</th>
                             </tr>
                         </thead>
                         <tbody id="mailDataTableBody">
@@ -625,14 +633,7 @@
                     <td>${item.mail_quote || ''}</td>
                     <td>${item.mail_charge || ''}</td>
                     <td>${item.mail_carrCode || ''}</td>
-                    <td class="table-actions">
-                        <button class="btn btn-sm btn-primary" onclick="editMailData(${item.mail_id})" title="编辑">
-                            <i class="fas fa-edit"></i>
-                        </button>
-                        <button class="btn btn-sm btn-danger" onclick="deleteMailData(${item.mail_id})" title="删除">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </td>
+
                 `;
                 
                 tbody.appendChild(row);

@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>账单管理 - 中邮账单管理系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        /* 邮件类型标签样式 */
+        .mail-type-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            text-align: center;
+            min-width: 40px;
+        }
+        .mail-type-badge.py {
+            background-color: #e3f2fd;
+            color: #1976d2;
+            border: 1px solid #bbdefb;
+        }
+        .mail-type-badge.ty {
+            background-color: #f3e5f5;
+            color: #7b1fa2;
+            border: 1px solid #ce93d8;
+        }
+        
+        /* 表格样式优化 */
+        .employee-table td {
+            vertical-align: middle;
+        }
+        .employee-table tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+        
+        /* 操作按钮样式 */
+        .btn-sm {
+            padding: 4px 8px;
+            font-size: 12px;
+        }
+        
+        /* 账务时期列样式 */
+        .period-cell {
+            font-weight: bold;
+            background-color: #f8f9fa !important;
+            border-right: 2px solid #dee2e6;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- 头部导航 -->
+        <header class="dashboard-header">
+            <div class="header-left"></div>
+            
+            <div class="header-center">
+                <h1>
+                    <i class="fas fa-file-invoice-dollar"></i>
+                    中邮账单管理系统
+                    <small style="display: block; font-size: 14px; font-weight: 300; margin-top: 5px;">China Post Bill Management System</small>
+                </h1>
+            </div>
+            
+            <div class="header-right">
+                <div class="user-info">
+                    <div class="user-dropdown">
+                        <div class="user-button">
+                            <i class="fas fa-user-circle"></i>
+                            <span>{{ username }}</span>
+                        </div>
+                        <div class="dropdown-content">
+                            <a href="#" onclick="showChangePasswordModal(); event.stopPropagation(); return false;">
+                                <i class="fas fa-key"></i>
+                                修改密码
+                            </a>
+                            <a href="{{ url_for('logout') }}">
+                                <i class="fas fa-sign-out-alt"></i>
+                                退出登录
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- 主要布局容器 -->
+        <div class="main-container">
+            <!-- 左侧菜单栏 -->
+            <aside class="sidebar">
+                <nav class="sidebar-nav">
+                    <ul class="nav-menu">
+                        {% if 'dashboard' in permissions %}
+                        <li class="nav-item">
+                            <a href="{{ url_for('dashboard') }}" class="nav-link">
+                                <i class="fas fa-tachometer-alt"></i>
+                                <span>仪表盘</span>
+                            </a>
+                        </li>
+                        {% endif %}
+                        
+                        {% if 'employees' in permissions or 'roles' in permissions or 'products' in permissions %}
+                        <li class="nav-item has-submenu">
+                            <a href="#" class="nav-link" onclick="toggleSubmenu(this)">
+                                <i class="fas fa-database"></i>
+                                <span>基础资料管理</span>
+                                <i class="fas fa-chevron-right submenu-arrow"></i>
+                            </a>
+                            <ul class="submenu">
+                                {% if 'employees' in permissions %}
+                                <li><a href="{{ url_for('employees') }}" class="submenu-link"><i class="fas fa-users"></i>员工管理</a></li>
+                                {% endif %}
+                                {% if 'roles' in permissions %}
+                                <li><a href="{{ url_for('roles') }}" class="submenu-link"><i class="fas fa-user-tag"></i>角色管理</a></li>
+                                {% endif %}
+                                {% if 'products' in permissions %}
+                                <li><a href="{{ url_for('products') }}" class="submenu-link"><i class="fas fa-box"></i>产品信息管理</a></li>
+                                {% endif %}
+                                <li><a href="{{ url_for('bill_info') }}" class="submenu-link"><i class="fas fa-file-invoice"></i>账单信息管理</a></li>
+                            </ul>
+                        </li>
+                        {% endif %}
+                        
+                        {% if 'mail_data' in permissions %}
+                        <li class="nav-item">
+                            <a href="{{ url_for('mail_data') }}" class="nav-link">
+                                <i class="fas fa-envelope-open-text"></i>
+                                <span>邮件数据管理</span>
+                            </a>
+                        </li>
+                        {% endif %}
+                        
+                        {% if 'bill_management' in permissions %}
+                        <li class="nav-item active">
+                            <a href="{{ url_for('bill_management') }}" class="nav-link">
+                                <i class="fas fa-calculator"></i>
+                                <span>账单管理</span>
+                            </a>
+                        </li>
+                        {% endif %}
+                        
+                        {% if 'reports' in permissions %}
+                        <li class="nav-item">
+                            <a href="#" class="nav-link">
+                                <i class="fas fa-chart-bar"></i>
+                                <span>分析报表</span>
+                            </a>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            </aside>
+
+            <!-- 主内容区域 -->
+            <main class="main-content">
+                <div class="content-header">
+                    <h2><i class="fas fa-calculator"></i> 账单管理</h2>
+                </div>
+
+                <!-- 生成账单按钮 -->
+                <div class="action-buttons" style="margin-bottom: 20px; display: flex; gap: 10px;">
+                    <button class="btn btn-success" onclick="showGenerateBillModal()">
+                        <i class="fas fa-file-invoice"></i> 生成账单
+                    </button>
+                </div>
+
+                <!-- 账单列表区域 -->
+                <div class="bill-list">
+                    <div class="table-container" style="overflow-x: auto; max-width: 100%; border: 1px solid #d0d7de; border-radius: 6px;">
+                        <table class="employee-table">
+                            <thead>
+                                <tr>
+                                    <th>账务时期</th>
+                        <th>邮件类型</th>
+                        <th>生成时间</th>
+                        <th>文件名</th>
+                        <th>账单金额</th>
+                        <th>下载</th>
+                        <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="billTableBody">
+                                <!-- 账单数据通过JavaScript动态加载 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- 生成账单模态框 -->
+    <div id="generateBillModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-file-invoice"></i> 生成账单</h3>
+                <span class="close" onclick="closeGenerateBillModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="generateBillForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="billYear">年份 <span class="required">*</span></label>
+                            <select id="billYear" name="year" required>
+                                <option value="">请选择年份</option>
+                                <option value="2023">2023年</option>
+                                <option value="2024">2024年</option>
+                                <option value="2025">2025年</option>
+                                <option value="2026">2026年</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="billMonth">月份 <span class="required">*</span></label>
+                            <select id="billMonth" name="month" required>
+                                <option value="">请选择月份</option>
+                                <option value="01">1月</option>
+                                <option value="02">2月</option>
+                                <option value="03">3月</option>
+                                <option value="04">4月</option>
+                                <option value="05">5月</option>
+                                <option value="06">6月</option>
+                                <option value="07">7月</option>
+                                <option value="08">8月</option>
+                                <option value="09">9月</option>
+                                <option value="10">10月</option>
+                                <option value="11">11月</option>
+                                <option value="12">12月</option>
+                            </select>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeGenerateBillModal()">取消</button>
+                <button type="button" class="btn btn-success" onclick="generateBill()">
+                    <i class="fas fa-check"></i> 确定生成
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 修改密码模态框 -->
+    <div id="changePasswordModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-key"></i> 修改密码</h3>
+                <span class="close" onclick="closeChangePasswordModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="changePasswordForm">
+                    <div class="form-group">
+                        <label for="currentPassword">当前密码 <span class="required">*</span></label>
+                        <input type="password" id="currentPassword" name="current_password" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="newPassword">新密码 <span class="required">*</span></label>
+                        <input type="password" id="newPassword" name="new_password" required minlength="6">
+                    </div>
+                    <div class="form-group">
+                        <label for="confirmPassword">确认新密码 <span class="required">*</span></label>
+                        <input type="password" id="confirmPassword" name="confirm_password" required minlength="6">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeChangePasswordModal()">取消</button>
+                <button type="button" class="btn btn-primary" onclick="changePassword()">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 显示生成账单模态框
+        function showGenerateBillModal() {
+            document.getElementById('generateBillModal').style.display = 'block';
+        }
+
+        // 关闭生成账单模态框
+        function closeGenerateBillModal() {
+            document.getElementById('generateBillModal').style.display = 'none';
+            document.getElementById('generateBillForm').reset();
+        }
+
+        // 生成账单
+        async function generateBill() {
+            const year = document.getElementById('billYear').value;
+            const month = document.getElementById('billMonth').value;
+
+            if (!year || !month) {
+                alert('请选择年份和月份');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/generate_bill', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        year: year,
+                        month: month
+                    })
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('账单生成成功！');
+                    closeGenerateBillModal();
+                    // 刷新账单列表
+                    loadBillList();
+                } else {
+                    alert('账单生成失败：' + result.message);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('账单生成失败，请稍后重试');
+            }
+        }
+
+        // 加载账单列表
+        async function loadBillList() {
+            try {
+                const response = await fetch('/api/bill_files');
+                const result = await response.json();
+                
+                if (result.success) {
+                    renderBillTable(result.data);
+                } else {
+                    console.error('获取账单列表失败:', result.message);
+                    document.getElementById('billTableBody').innerHTML = '<tr><td colspan="7" style="text-align: center; color: #666;">获取账单列表失败</td></tr>';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('billTableBody').innerHTML = '<tr><td colspan="7" style="text-align: center; color: #666;">加载失败，请稍后重试</td></tr>';
+            }
+        }
+        
+        // 渲染账单表格（支持相同账务时期合并）
+        function renderBillTable(files) {
+            const tbody = document.getElementById('billTableBody');
+            
+            if (files.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #666;">暂无账单文件</td></tr>';
+                return;
+            }
+            
+            // 按账务时期分组
+            const groupedFiles = {};
+            files.forEach(file => {
+                if (!groupedFiles[file.period]) {
+                    groupedFiles[file.period] = [];
+                }
+                groupedFiles[file.period].push(file);
+            });
+            
+            let html = '';
+            
+            Object.keys(groupedFiles).sort().forEach(period => {
+                const periodFiles = groupedFiles[period];
+                
+                // 按邮件类型分组，用于金额合并显示
+                const mailTypeGroups = {};
+                periodFiles.forEach(file => {
+                    if (!mailTypeGroups[file.mail_type]) {
+                        mailTypeGroups[file.mail_type] = [];
+                    }
+                    mailTypeGroups[file.mail_type].push(file);
+                });
+                
+                const totalRows = periodFiles.length;
+                let currentRowIndex = 0;
+                
+                Object.keys(mailTypeGroups).sort().forEach(mailType => {
+                    const typeFiles = mailTypeGroups[mailType];
+                    const typeRowspan = typeFiles.length;
+                    
+                    // 计算该邮件类型的总金额（CN51和CN66金额相同，取第一个）
+                    const totalAmount = typeFiles[0].amount || 0;
+                    
+                    typeFiles.forEach((file, typeIndex) => {
+                        html += '<tr>';
+                        
+                        // 账务时期列（只在第一行显示）
+                        if (currentRowIndex === 0) {
+                            html += `<td rowspan="${totalRows}" style="vertical-align: middle; font-weight: bold; background-color: #f8f9fa;">${period}</td>`;
+                        }
+                        
+                        // 邮件类型
+                        html += `<td><span class="mail-type-badge ${file.mail_type.toLowerCase()}">${file.mail_type}</span></td>`;
+                        
+                        // 生成时间
+                        html += `<td>${file.create_time || '未知'}</td>`;
+                        
+                        // 文件名
+                        html += `<td style="font-family: monospace; font-size: 12px;">${file.filename}</td>`;
+                        
+                        // 账单金额（相同邮件类型合并显示）
+                        if (typeIndex === 0) {
+                            html += `<td rowspan="${typeRowspan}" style="vertical-align: middle; text-align: center; font-weight: bold; color: #28a745;">¥${totalAmount.toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>`;
+                        }
+                        
+                        // 下载列
+                        html += `<td style="text-align: center;">`;
+                        html += `<button class="btn btn-sm btn-success" onclick="downloadFile('${file.filename}')" title="下载文件">`;
+                        html += `<i class="fas fa-download"></i></button>`;
+                        html += `</td>`;
+                        
+                        // 操作列（只在第一行显示）
+                        if (currentRowIndex === 0) {
+                            html += `<td rowspan="${totalRows}" style="vertical-align: middle;">`;
+                            html += `<div style="display: flex; gap: 5px; justify-content: center;">`;
+                            html += `<button class="btn btn-sm btn-warning" onclick="regenerateBill('${file.year}', '${file.month}')" title="重新生成">`;
+                            html += `<i class="fas fa-redo"></i> 重新生成</button>`;
+                            html += `<button class="btn btn-sm btn-danger" onclick="deleteBill('${file.year}', '${file.month}')" title="删除">`;
+                            html += `<i class="fas fa-trash"></i> 删除</button>`;
+                            html += `</div></td>`;
+                        }
+                        
+                        html += '</tr>';
+                        currentRowIndex++;
+                    });
+                });
+            });
+            
+            tbody.innerHTML = html;
+        }
+        
+        // 重新生成账单
+        async function regenerateBill(year, month) {
+            if (!confirm(`确定要重新生成${year}年${month}月的账单吗？这将删除原有账单并重新生成。`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/regenerate_bill', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        year: year,
+                        month: month
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('账单重新生成成功！');
+                    loadBillList(); // 刷新列表
+                } else {
+                    alert('重新生成失败：' + result.message);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('重新生成失败，请稍后重试');
+            }
+        }
+        
+        // 删除账单
+         async function deleteBill(year, month) {
+             if (!confirm(`确定要删除${year}年${month}月的所有账单吗？此操作不可恢复。`)) {
+                 return;
+             }
+             
+             try {
+                 const response = await fetch('/api/delete_bill', {
+                     method: 'POST',
+                     headers: {
+                         'Content-Type': 'application/json'
+                     },
+                     body: JSON.stringify({
+                         year: year,
+                         month: month
+                     })
+                 });
+                 
+                 const result = await response.json();
+                 
+                 if (result.success) {
+                     alert('账单删除成功！');
+                     loadBillList(); // 刷新列表
+                 } else {
+                     alert('删除失败：' + result.message);
+                 }
+             } catch (error) {
+                 console.error('Error:', error);
+                 alert('删除失败，请稍后重试');
+             }
+         }
+         
+         // 下载文件
+         function downloadFile(filename) {
+             // 创建一个隐藏的下载链接
+             const link = document.createElement('a');
+             link.href = `/api/download_bill/${encodeURIComponent(filename)}`;
+             link.download = filename;
+             link.style.display = 'none';
+             
+             // 添加到页面并触发点击
+             document.body.appendChild(link);
+             link.click();
+             
+             // 清理
+             document.body.removeChild(link);
+         }
+
+        // 显示修改密码模态框
+        function showChangePasswordModal() {
+            document.getElementById('changePasswordModal').style.display = 'block';
+        }
+
+        // 关闭修改密码模态框
+        function closeChangePasswordModal() {
+            document.getElementById('changePasswordModal').style.display = 'none';
+            document.getElementById('changePasswordForm').reset();
+        }
+
+        // 修改密码
+        async function changePassword() {
+            const currentPassword = document.getElementById('currentPassword').value;
+            const newPassword = document.getElementById('newPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+
+            if (!currentPassword || !newPassword || !confirmPassword) {
+                alert('请填写所有字段');
+                return;
+            }
+
+            if (newPassword !== confirmPassword) {
+                alert('新密码和确认密码不匹配');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/change_password', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        current_password: currentPassword,
+                        new_password: newPassword
+                    })
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('密码修改成功！');
+                    closeChangePasswordModal();
+                } else {
+                    alert('密码修改失败：' + result.message);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('密码修改失败，请稍后重试');
+            }
+        }
+
+        // 子菜单切换
+        function toggleSubmenu(element) {
+            const submenu = element.nextElementSibling;
+            const arrow = element.querySelector('.submenu-arrow');
+            
+            if (submenu.style.maxHeight && submenu.style.maxHeight !== '0px') {
+                submenu.style.maxHeight = '0px';
+                arrow.style.transform = 'rotate(0deg)';
+            } else {
+                submenu.style.maxHeight = submenu.scrollHeight + 'px';
+                arrow.style.transform = 'rotate(90deg)';
+            }
+        }
+
+        // 用户下拉菜单功能
+        const userDropdown = document.querySelector('.user-dropdown');
+        const userButton = document.querySelector('.user-button');
+        const dropdownContent = document.querySelector('.dropdown-content');
+        
+        if (userDropdown && userButton && dropdownContent) {
+            let isDropdownOpen = false;
+            
+            // 点击用户按钮切换下拉菜单
+            userButton.addEventListener('click', function(e) {
+                e.stopPropagation();
+                isDropdownOpen = !isDropdownOpen;
+                dropdownContent.classList.toggle('show', isDropdownOpen);
+            });
+            
+            // 悬停显示下拉菜单
+            userDropdown.addEventListener('mouseenter', function() {
+                if (!isDropdownOpen) {
+                    isDropdownOpen = true;
+                    dropdownContent.classList.add('show');
+                }
+            });
+            
+            // 鼠标进入下拉内容时保持显示
+            dropdownContent.addEventListener('mouseenter', function() {
+                // 保持显示状态
+            });
+            
+            // 鼠标离开用户区域时隐藏（延迟处理以允许鼠标移动到下拉内容）
+            userDropdown.addEventListener('mouseleave', function(e) {
+                // 检查鼠标是否移动到下拉内容区域
+                setTimeout(() => {
+                    if (!userDropdown.matches(':hover') && !dropdownContent.matches(':hover')) {
+                        isDropdownOpen = false;
+                        dropdownContent.classList.remove('show');
+                    }
+                }, 100);
+            });
+            
+            // 鼠标离开下拉内容时隐藏
+            dropdownContent.addEventListener('mouseleave', function() {
+                setTimeout(() => {
+                    if (!userDropdown.matches(':hover') && !dropdownContent.matches(':hover')) {
+                        isDropdownOpen = false;
+                        dropdownContent.classList.remove('show');
+                    }
+                }, 100);
+            });
+            
+            // 点击页面其他地方时隐藏下拉菜单
+            document.addEventListener('click', function(e) {
+                if (!userDropdown.contains(e.target)) {
+                    isDropdownOpen = false;
+                    dropdownContent.classList.remove('show');
+                }
+            });
+        }
+
+        // 页面加载完成后执行
+        document.addEventListener('DOMContentLoaded', function() {
+            loadBillList();
+        });
+
+        // 点击模态框外部关闭
+        window.onclick = function(event) {
+            const generateModal = document.getElementById('generateBillModal');
+            const passwordModal = document.getElementById('changePasswordModal');
+            
+            if (event.target === generateModal) {
+                closeGenerateBillModal();
+            }
+            if (event.target === passwordModal) {
+                closeChangePasswordModal();
+            }
+        }
+    </script>
+</body>
+</html>

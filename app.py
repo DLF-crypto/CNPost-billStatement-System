@@ -393,6 +393,22 @@ def mail_data():
                          username=session.get('user_name', session['username']),
                          permissions=user_permissions)
 
+# 账单管理页面
+@app.route('/bill_management')
+def bill_management():
+    if 'loggedin' not in session:
+        return redirect(url_for('login'))
+    
+    # 检查用户是否有账单管理权限
+    user_permissions = get_user_permissions(session['user_id'])
+    if 'bill_management' not in user_permissions:
+        flash('您没有访问账单管理的权限！', 'error')
+        return redirect(url_for('dashboard'))
+    
+    return render_template('bill_management.html', 
+                         username=session.get('user_name', session['username']),
+                         permissions=user_permissions)
+
 # 获取所有角色
 def get_all_roles():
     """获取所有角色信息"""
@@ -2416,6 +2432,466 @@ def import_excel_mail_data():
             'message': f'文件处理失败: {str(e)}',
             'task_id': task_id if 'task_id' in locals() else None
         })
+
+# 生成账单API
+@app.route('/api/generate_bill', methods=['POST'])
+def generate_bill():
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        data = request.get_json()
+        year = data.get('year')
+        month = data.get('month')
+        
+        if not year or not month:
+            return jsonify({'success': False, 'message': '请选择年月'})
+        
+        # 格式化年月为YYYYMM
+        # 确保year和month都是整数类型
+        try:
+            year = int(year)
+            month = int(month)
+        except (ValueError, TypeError):
+            return jsonify({'success': False, 'message': '年份和月份必须是有效的数字'})
+        
+        year_month = f"{year}{month:02d}"
+        
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': '数据库连接失败'})
+        
+        cursor = connection.cursor(dictionary=True)
+        
+        # 查询指定年月的邮件数据，按邮件类型分组
+        query = """
+            SELECT * FROM mail_data 
+            WHERE mail_recTime LIKE %s 
+            ORDER BY Mail_class, mail_recTime
+        """
+        
+        cursor.execute(query, (f"{year_month}%",))
+        mail_data = cursor.fetchall()
+        
+        if not mail_data:
+            return jsonify({'success': False, 'message': f'{year}年{month}月没有找到邮件数据'})
+        
+        # 按邮件类型分组
+        py_data = [row for row in mail_data if row['Mail_class'] == 'PY']
+        ty_data = [row for row in mail_data if row['Mail_class'] == 'TY']
+        
+        generated_files = []
+        
+        # 生成PY账单 (CN66格式)
+        if py_data:
+            py_filename = f"PY{year}年{month:02d}月天泽物流CN66账单.csv"
+            py_filepath = os.path.join('invoices', py_filename)
+            generate_csv_bill(py_data, py_filepath, 'PY')
+            generated_files.append(py_filename)
+            
+            # 生成PY账单 (CN51格式)
+            py_cn51_filename = f"PY{year}年{month:02d}月天泽物流CN51账单.csv"
+            py_cn51_filepath = os.path.join('invoices', py_cn51_filename)
+            generate_cn51_bill(py_data, py_cn51_filepath, 'PY')
+            generated_files.append(py_cn51_filename)
+        
+        # 生成TY账单 (CN66格式)
+        if ty_data:
+            ty_filename = f"TY{year}年{month:02d}月天泽物流CN66账单.csv"
+            ty_filepath = os.path.join('invoices', ty_filename)
+            generate_csv_bill(ty_data, ty_filepath, 'TY')
+            generated_files.append(ty_filename)
+            
+            # 生成TY账单 (CN51格式)
+            ty_cn51_filename = f"TY{year}年{month:02d}月天泽物流CN51账单.csv"
+            ty_cn51_filepath = os.path.join('invoices', ty_cn51_filename)
+            generate_cn51_bill(ty_data, ty_cn51_filepath, 'TY')
+            generated_files.append(ty_cn51_filename)
+        
+        if generated_files:
+            return jsonify({
+                'success': True, 
+                'message': f'成功生成{len(generated_files)}个账单文件',
+                'files': generated_files
+            })
+        else:
+            return jsonify({'success': False, 'message': '没有找到PY或TY类型的邮件数据'})
+            
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'生成账单失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if 'connection' in locals() and connection:
+            connection.close()
+
+# 计算账单金额的辅助函数
+def calculate_bill_amount(filepath):
+    try:
+        import csv
+        total_amount = 0
+        
+        with open(filepath, 'r', encoding='utf-8-sig') as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                # 根据文件类型确定金额列名
+                if 'CN51' in filepath:
+                    # CN51格式的金额列
+                    amount_str = row.get('金额', '0')
+                else:
+                    # CN66格式的金额列
+                    amount_str = row.get('mail_amount', '0')
+                
+                # 转换为浮点数并累加
+                try:
+                    amount = float(amount_str) if amount_str else 0
+                    total_amount += amount
+                except (ValueError, TypeError):
+                    continue
+        
+        return round(total_amount, 2)
+    except Exception as e:
+        print(f"计算账单金额失败: {str(e)}")
+        return 0
+
+# 生成CN51格式账单文件的辅助函数（数据透视表格式）
+def generate_cn51_bill(data, filepath, mail_type):
+    import csv
+    from collections import defaultdict
+    
+    # 定义CN51账单表头
+    headers = [
+        '供应商代码（三位缩写）', '中文名称', '邮件种类', '原寄局', '寄达局', 
+        '适用合同', '结算方式', '板号', '账务时期', '运能编码', 
+        '收费路由', '航班', '来账重量', '费率', '金额', 
+        '邮方确认重量', '邮方确认费率', '邮方确认金额'
+    ]
+    
+    # 创建数据透视表结构
+    pivot_data = defaultdict(lambda: {
+        'weight_sum': 0,
+        'quote': 0,
+        'mail_settle_code': '',
+        'mail_originPost': '',
+        'mail_destPost': '',
+        'period': '',
+        'mail_carrCode': '',
+        'mail_routeInfo': '',
+        'mail_flightInfo': ''
+    })
+    
+    # 按照指定的行字段进行分组汇总
+    for row in data:
+        # 构建分组键（行字段组合）
+        key = (
+            row.get('mail_settle_code', ''),
+            row.get('mail_originPost', ''),
+            row.get('mail_destPost', ''),
+            row.get('mail_recTime', '')[:6] if row.get('mail_recTime') else '',  # 账务时期YYYYMM
+            row.get('mail_carrCode', ''),
+            row.get('mail_routeInfo', ''),
+            row.get('mail_flightInfo', ''),
+            str(row.get('mail_quote', 0))  # 费率作为分组条件
+        )
+        
+        # 累加重量（保留1位小数避免浮点数精度问题）
+        weight = float(row.get('mail_weight', 0)) if row.get('mail_weight') else 0
+        pivot_data[key]['weight_sum'] = round(pivot_data[key]['weight_sum'] + weight, 1)
+        
+        # 保存其他字段信息
+        pivot_data[key]['mail_settle_code'] = row.get('mail_settle_code', '')
+        pivot_data[key]['mail_originPost'] = row.get('mail_originPost', '')
+        pivot_data[key]['mail_destPost'] = row.get('mail_destPost', '')
+        pivot_data[key]['period'] = row.get('mail_recTime', '')[:6] if row.get('mail_recTime') else ''
+        pivot_data[key]['mail_carrCode'] = row.get('mail_carrCode', '')
+        pivot_data[key]['mail_routeInfo'] = row.get('mail_routeInfo', '')
+        pivot_data[key]['mail_flightInfo'] = row.get('mail_flightInfo', '')
+        pivot_data[key]['quote'] = float(row.get('mail_quote', 0)) if row.get('mail_quote') else 0
+    
+    # 写入CSV文件
+    with open(filepath, 'w', newline='', encoding='utf-8-sig') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(headers)
+        
+        for key, summary in pivot_data.items():
+            # 计算金额 = 来账重量 * 费率
+            amount = summary['weight_sum'] * summary['quote']
+            
+            csv_row = [
+                 'CP001',  # 供应商代码（固定值）
+                 '天泽物流',  # 中文名称（固定值）
+                 summary['mail_settle_code'],  # 邮件种类
+                 summary['mail_originPost'],  # 原寄局
+                 summary['mail_destPost'],  # 寄达局
+                 '',  # 适用合同（空值）
+                 '单价',  # 结算方式（固定值）
+                 '',  # 板号（空值）
+                 summary['period'],  # 账务时期
+                 summary['mail_carrCode'],  # 运能编码
+                 summary['mail_routeInfo'],  # 收费路由
+                 summary['mail_flightInfo'],  # 航班
+                 round(summary['weight_sum'], 1),  # 来账重量（求和，保留1位小数）
+                 summary['quote'],  # 费率
+                 round(amount, 2),  # 金额（来账重量*费率，保留2位小数）
+                 '',  # 邮方确认重量（空值）
+                 '',  # 邮方确认费率（空值）
+                 ''   # 邮方确认金额（空值）
+             ]
+            
+            writer.writerow(csv_row)
+
+# 生成CSV账单文件的辅助函数
+def generate_csv_bill(data, filepath, mail_type):
+    import csv
+    
+    # 定义CSV表头
+    headers = [
+        '邮件种类', '承运人名称', 'Barcode', 'CN38时间', '接收扫描时间', 
+        '启运地点', '启运时间', '中转到达地点', '中转到达时间', '中转启运时间',
+        '到达地点', '目的地到达时间', '目的地交邮时间', '收费路由', '航班',
+        '重量', '费率', '金额', '币种', '账务时期', '账单编号', '备注', 
+        '运能编码', '箱板类型', '集装器号（板号）'
+    ]
+    
+    with open(filepath, 'w', newline='', encoding='utf-8-sig') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(headers)
+        
+        for row in data:
+            csv_row = [
+                row.get('mail_settle_code', ''),  # 邮件种类
+                '天泽物流',  # 承运人名称（固定值）
+                row.get('mail_receptacleNo', ''),  # Barcode
+                row.get('mail_recTime', ''),  # CN38时间
+                row.get('mail_recTime', ''),  # 接收扫描时间
+                'HKG',  # 启运地点（固定值）
+                row.get('mail_upliftTime', ''),  # 启运时间
+                '',  # 中转到达地点（空）
+                '',  # 中转到达时间（空）
+                '',  # 中转启运时间（空）
+                row.get('mail_dest', ''),  # 到达地点
+                row.get('mail_arriveTime', ''),  # 目的地到达时间
+                row.get('mail_deliverTime', ''),  # 目的地交邮时间
+                row.get('mail_routeInfo', ''),  # 收费路由
+                row.get('mail_flightInfo', ''),  # 航班
+                row.get('mail_weight', ''),  # 重量
+                row.get('mail_quote', ''),  # 费率
+                row.get('mail_charge', ''),  # 金额
+                'RMB',  # 币种（固定值）
+                row.get('mail_recTime', '')[:6] if row.get('mail_recTime') else '',  # 账务时期（YYYYMM）
+                '',  # 账单编号（空）
+                '',  # 备注（空）
+                row.get('mail_carrCode', ''),  # 运能编码
+                'D',  # 箱板类型（固定值：大写字母D）
+                ''  # 集装器号（板号）（空）
+            ]
+            writer.writerow(csv_row)
+
+# 获取账单文件列表API
+@app.route('/api/bill_files', methods=['GET'])
+def get_bill_files():
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        invoices_dir = 'invoices'
+        if not os.path.exists(invoices_dir):
+            return jsonify({'success': True, 'data': []})
+        
+        files = []
+        for filename in os.listdir(invoices_dir):
+            if filename.endswith('.csv'):
+                filepath = os.path.join(invoices_dir, filename)
+                file_stat = os.stat(filepath)
+                
+                # 从文件名解析信息
+                # 文件名格式: PY2025年04月天泽物流CN66账单.csv 或 TY2025年04月天泽物流CN66账单.csv
+                mail_type = filename[:2]  # PY 或 TY
+                
+                # 提取年月信息
+                import re
+                match = re.search(r'(\d{4})年(\d{2})月', filename)
+                if match:
+                    year = match.group(1)
+                    month = match.group(2)
+                    period = f"{year}年{month}月"
+                else:
+                    period = '未知'
+                
+                # 生成时间
+                create_time = datetime.fromtimestamp(file_stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                
+                # 计算账单金额
+                bill_amount = calculate_bill_amount(filepath)
+                
+                files.append({
+                    'filename': filename,
+                    'mail_type': mail_type,
+                    'period': period,
+                    'create_time': create_time,
+                    'year': year if match else '',
+                    'month': month if match else '',
+                    'amount': bill_amount
+                })
+        
+        # 按账务时期和邮件类型排序
+        files.sort(key=lambda x: (x['period'], x['mail_type']))
+        
+        return jsonify({'success': True, 'data': files})
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'获取文件列表失败: {str(e)}'})
+
+# 重新生成账单API
+@app.route('/api/regenerate_bill', methods=['POST'])
+def regenerate_bill():
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        data = request.get_json()
+        year = data.get('year')
+        month = data.get('month')
+        
+        if not year or not month:
+            return jsonify({'success': False, 'message': '年月参数不能为空'})
+        
+        # 删除原有的账单文件
+        invoices_dir = 'invoices'
+        if os.path.exists(invoices_dir):
+            for filename in os.listdir(invoices_dir):
+                if f"{year}年{month}月" in filename and filename.endswith('.csv'):
+                    os.remove(os.path.join(invoices_dir, filename))
+        
+        # 重新生成账单（复用原有的生成逻辑）
+        year_month = f"{year}{month}"
+        
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': '数据库连接失败'})
+        
+        cursor = connection.cursor(dictionary=True)
+        
+        # 查询指定年月的邮件数据
+        query = """
+            SELECT * FROM mail_data 
+            WHERE mail_recTime LIKE %s 
+            ORDER BY Mail_class, mail_recTime
+        """
+        
+        cursor.execute(query, (f"{year_month}%",))
+        mail_data = cursor.fetchall()
+        
+        if not mail_data:
+            return jsonify({'success': False, 'message': f'{year}年{month}月没有找到邮件数据'})
+        
+        # 按邮件类型分组
+        py_data = [row for row in mail_data if row['Mail_class'] == 'PY']
+        ty_data = [row for row in mail_data if row['Mail_class'] == 'TY']
+        
+        generated_files = []
+        
+        # 生成PY账单
+        if py_data:
+            py_filename = f"PY{year}年{month}月天泽物流CN66账单.csv"
+            py_filepath = os.path.join('invoices', py_filename)
+            generate_csv_bill(py_data, py_filepath, 'PY')
+            generated_files.append(py_filename)
+        
+        # 生成TY账单
+        if ty_data:
+            ty_filename = f"TY{year}年{month}月天泽物流CN66账单.csv"
+            ty_filepath = os.path.join('invoices', ty_filename)
+            generate_csv_bill(ty_data, ty_filepath, 'TY')
+            generated_files.append(ty_filename)
+        
+        if generated_files:
+            return jsonify({
+                'success': True, 
+                'message': f'成功重新生成{len(generated_files)}个账单文件',
+                'files': generated_files
+            })
+        else:
+            return jsonify({'success': False, 'message': '没有找到PY或TY类型的邮件数据'})
+            
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'重新生成账单失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if 'connection' in locals() and connection:
+            connection.close()
+
+# 删除账单API
+@app.route('/api/delete_bill', methods=['POST'])
+def delete_bill():
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        data = request.get_json()
+        year = data.get('year')
+        month = data.get('month')
+        
+        if not year or not month:
+            return jsonify({'success': False, 'message': '年月参数不能为空'})
+        
+        # 删除指定年月的所有账单文件
+        invoices_dir = 'invoices'
+        deleted_files = []
+        
+        if os.path.exists(invoices_dir):
+            for filename in os.listdir(invoices_dir):
+                if f"{year}年{month}月" in filename and filename.endswith('.csv'):
+                    filepath = os.path.join(invoices_dir, filename)
+                    os.remove(filepath)
+                    deleted_files.append(filename)
+        
+        if deleted_files:
+            return jsonify({
+                'success': True, 
+                'message': f'成功删除{len(deleted_files)}个账单文件',
+                'files': deleted_files
+            })
+        else:
+            return jsonify({'success': False, 'message': f'{year}年{month}月没有找到账单文件'})
+            
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'删除账单失败: {str(e)}'})
+
+@app.route('/api/download_bill/<filename>')
+def download_bill(filename):
+    """下载账单文件"""
+    if 'loggedin' not in session:
+        return jsonify({'error': '请先登录'}), 401
+    
+    try:
+        # 安全检查：确保文件名不包含路径遍历字符
+        if '..' in filename or '/' in filename or '\\' in filename:
+            return jsonify({'error': '非法文件名'}), 400
+        
+        invoices_dir = 'invoices'
+        file_path = os.path.join(invoices_dir, filename)
+        
+        # 检查文件是否存在
+        if not os.path.exists(file_path):
+            return jsonify({'error': '文件不存在'}), 404
+        
+        # 检查文件是否为CSV文件
+        if not filename.endswith('.csv'):
+            return jsonify({'error': '只能下载CSV文件'}), 400
+        
+        # 发送文件
+        from flask import send_file
+        return send_file(
+            file_path,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='text/csv'
+        )
+        
+    except Exception as e:
+        return jsonify({'error': f'下载失败: {str(e)}'}), 500
 
 @app.route('/logout')
 def logout():
