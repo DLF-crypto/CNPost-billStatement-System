@@ -6,6 +6,95 @@
     <title>中邮账单管理系统 - 登录</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* 鬼火少年特效样式 */
+        .powered-by-ghost {
+            text-align: center !important;
+            margin-top: 20px;
+            padding: 15px;
+            background: linear-gradient(45deg, #1a1a2e, #16213e, #0f3460);
+            border-radius: 15px;
+            border: 2px solid transparent;
+            background-clip: padding-box;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .powered-by-ghost::before {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4, #ffeaa7, #dda0dd);
+            border-radius: 15px;
+            z-index: -1;
+            animation: borderGlow 3s linear infinite;
+        }
+        
+        .fire-icon {
+            color: #ff4757;
+            font-size: 18px;
+            margin-right: 8px;
+            animation: fireFlicker 1.5s ease-in-out infinite alternate;
+            filter: drop-shadow(0 0 10px #ff4757);
+        }
+        
+        .ghost-text {
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4, #ffeaa7, #dda0dd);
+            background-size: 400% 400%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-weight: bold;
+            font-size: 16px;
+            text-shadow: 0 0 20px rgba(255, 107, 107, 0.5);
+            animation: rainbowText 3s ease-in-out infinite, textGlow 2s ease-in-out infinite alternate;
+            letter-spacing: 1px;
+        }
+        
+        @keyframes borderGlow {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
+        @keyframes fireFlicker {
+            0% { 
+                transform: scale(1) rotate(-2deg);
+                filter: drop-shadow(0 0 10px #ff4757);
+            }
+            100% { 
+                transform: scale(1.1) rotate(2deg);
+                filter: drop-shadow(0 0 15px #ff6b6b);
+            }
+        }
+        
+        @keyframes rainbowText {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
+        @keyframes textGlow {
+            0% { 
+                text-shadow: 0 0 20px rgba(255, 107, 107, 0.5), 0 0 30px rgba(78, 205, 196, 0.3);
+            }
+            100% { 
+                text-shadow: 0 0 30px rgba(255, 107, 107, 0.8), 0 0 40px rgba(78, 205, 196, 0.6), 0 0 50px rgba(69, 183, 209, 0.4);
+            }
+        }
+        
+        .powered-by-ghost:hover .ghost-text {
+            animation-duration: 1s;
+        }
+        
+        .powered-by-ghost:hover .fire-icon {
+            animation-duration: 0.5s;
+            transform: scale(1.2);
+        }
+    </style>
 </head>
 <body>
     <div class="login-container">
@@ -59,9 +148,9 @@
                 </form>
                 
                 <div class="login-info">
-                    <div class="info-item">
-                        <i class="fas fa-info-circle"></i>
-                        <span>默认账号：admin / 密码：123456</span>
+                    <div class="info-item powered-by-ghost">
+                        <i class="fas fa-fire fire-icon"></i>
+                        <span class="ghost-text">powered by: 鬼火少年！！</span>
                     </div>
                 </div>
             </div>
