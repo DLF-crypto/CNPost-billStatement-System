@@ -142,7 +142,7 @@ def validate_bill_data(data, connection, exclude_id=None):
 DB_CONFIG = {
     'host': 'localhost',
     'database': 'cnpost_bill_system',
-    'user': 'root',
+    'user': 'cnpost',
     'password': '123456',
     'charset': 'utf8mb4',
     'use_unicode': True,
