@@ -1875,12 +1875,25 @@ def add_mail_data():
         if connection:
             cursor = connection.cursor()
             
+            # 根据mail_recTime生成mail_date
+            mail_rec_time = data.get('mail_recTime', '')
+            mail_date = None
+            if mail_rec_time and len(mail_rec_time) >= 8:
+                try:
+                    # 从YYYYMMDD格式提取日期
+                    year = int(mail_rec_time[:4])
+                    month = int(mail_rec_time[4:6])
+                    day = int(mail_rec_time[6:8])
+                    mail_date = f"{year:04d}-{month:02d}-{day:02d}"
+                except (ValueError, IndexError):
+                    mail_date = None
+            
             insert_query = """
                 INSERT INTO mail_data (Mail_class, mail_receptacleNo, mail_originPost, mail_destPost, 
                                      mail_dest, mail_recTime, mail_upliftTime, mail_arriveTime, 
                                      mail_deliverTime, mail_routeInfo, mail_flightInfo, 
-                                     mail_weight, mail_quote, mail_charge, mail_carrCode)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                     mail_weight, mail_quote, mail_charge, mail_carrCode, mail_date)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             
             cursor.execute(insert_query, (
@@ -1898,7 +1911,8 @@ def add_mail_data():
                 data.get('mail_weight'),
                 data.get('mail_quote'),
                 data.get('mail_charge'),
-                data.get('mail_carrCode')
+                data.get('mail_carrCode'),
+                mail_date
             ))
             
             connection.commit()
@@ -1941,6 +1955,19 @@ def update_mail_data(mail_id):
         # 将总包号前15位转换为大写
         data['mail_receptacleNo'] = receptacle_no[:15].upper() + receptacle_no[15:]
         
+        # 根据mail_recTime生成mail_date
+        mail_rec_time = data.get('mail_recTime', '')
+        mail_date = None
+        if mail_rec_time and len(mail_rec_time) >= 8:
+            try:
+                # 从YYYYMMDD格式提取日期
+                year = int(mail_rec_time[:4])
+                month = int(mail_rec_time[4:6])
+                day = int(mail_rec_time[6:8])
+                mail_date = f"{year:04d}-{month:02d}-{day:02d}"
+            except (ValueError, IndexError):
+                mail_date = None
+        
         connection = get_db_connection()
         if connection:
             cursor = connection.cursor()
@@ -1951,7 +1978,7 @@ def update_mail_data(mail_id):
                     mail_dest = %s, mail_recTime = %s, mail_upliftTime = %s,
                     mail_arriveTime = %s, mail_deliverTime = %s, mail_routeInfo = %s,
                     mail_flightInfo = %s, mail_weight = %s, mail_quote = %s,
-                    mail_charge = %s, mail_carrCode = %s
+                    mail_charge = %s, mail_carrCode = %s, mail_date = %s
                 WHERE mail_id = %s
             """
             
@@ -1971,6 +1998,7 @@ def update_mail_data(mail_id):
                 data.get('mail_quote'),
                 data.get('mail_charge'),
                 data.get('mail_carrCode'),
+                mail_date,
                 mail_id
             ))
             
@@ -2645,16 +2673,24 @@ def get_dashboard_stats():
         
         cursor = connection.cursor(dictionary=True)
         
-        # 获取最近6个月的月度统计数据（使用优化后的mail_date字段）
+        # 获取最近6个月的月度统计数据（修复mail_date为空的问题）
         monthly_stats_query = """
             SELECT 
-                DATE_FORMAT(mail_date, '%Y-%m') as month,
+                CASE 
+                    WHEN mail_date IS NOT NULL THEN DATE_FORMAT(mail_date, '%Y-%m')
+                    WHEN mail_recTime IS NOT NULL THEN CONCAT(LEFT(mail_recTime, 4), '-', SUBSTRING(mail_recTime, 5, 2))
+                    ELSE 'Unknown'
+                END as month,
                 ROUND(SUM(mail_charge), 2) as total_amount,
                 ROUND(SUM(mail_weight), 3) as total_weight,
                 COUNT(*) as total_count
             FROM mail_data 
-            WHERE mail_date IS NOT NULL AND mail_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
-            GROUP BY DATE_FORMAT(mail_date, '%Y-%m')
+            WHERE (
+                (mail_date IS NOT NULL AND mail_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH))
+                OR 
+                (mail_date IS NULL AND mail_recTime IS NOT NULL AND LEFT(mail_recTime, 6) >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 6 MONTH), '%Y%m'))
+            )
+            GROUP BY month
             ORDER BY month DESC
             LIMIT 6
         """
@@ -3112,8 +3148,8 @@ def get_bill_files():
                     'amount': bill_amount
                 })
         
-        # 按账务时期和邮件类型排序
-        files.sort(key=lambda x: (x['period'], x['mail_type']))
+        # 按年月降序排列，确保最新账单在最上面，然后按邮件类型排序
+        files.sort(key=lambda x: (x['year'], x['month'], x['mail_type']), reverse=True)
         
         return jsonify({'success': True, 'data': files})
         
