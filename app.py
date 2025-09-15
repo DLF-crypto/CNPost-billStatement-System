@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, send_file
 import mysql.connector
 from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import datetime, timedelta
@@ -11,6 +11,9 @@ from datetime import datetime
 import re
 import threading
 import time
+import io
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 app = Flask(__name__)
 
@@ -1872,12 +1875,25 @@ def add_mail_data():
         if connection:
             cursor = connection.cursor()
             
+            # 根据mail_recTime生成mail_date
+            mail_rec_time = data.get('mail_recTime', '')
+            mail_date = None
+            if mail_rec_time and len(mail_rec_time) >= 8:
+                try:
+                    # 从YYYYMMDD格式提取日期
+                    year = int(mail_rec_time[:4])
+                    month = int(mail_rec_time[4:6])
+                    day = int(mail_rec_time[6:8])
+                    mail_date = f"{year:04d}-{month:02d}-{day:02d}"
+                except (ValueError, IndexError):
+                    mail_date = None
+            
             insert_query = """
                 INSERT INTO mail_data (Mail_class, mail_receptacleNo, mail_originPost, mail_destPost, 
                                      mail_dest, mail_recTime, mail_upliftTime, mail_arriveTime, 
                                      mail_deliverTime, mail_routeInfo, mail_flightInfo, 
-                                     mail_weight, mail_quote, mail_charge, mail_carrCode)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                     mail_weight, mail_quote, mail_charge, mail_carrCode, mail_date)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             
             cursor.execute(insert_query, (
@@ -1895,7 +1911,8 @@ def add_mail_data():
                 data.get('mail_weight'),
                 data.get('mail_quote'),
                 data.get('mail_charge'),
-                data.get('mail_carrCode')
+                data.get('mail_carrCode'),
+                mail_date
             ))
             
             connection.commit()
@@ -1938,6 +1955,19 @@ def update_mail_data(mail_id):
         # 将总包号前15位转换为大写
         data['mail_receptacleNo'] = receptacle_no[:15].upper() + receptacle_no[15:]
         
+        # 根据mail_recTime生成mail_date
+        mail_rec_time = data.get('mail_recTime', '')
+        mail_date = None
+        if mail_rec_time and len(mail_rec_time) >= 8:
+            try:
+                # 从YYYYMMDD格式提取日期
+                year = int(mail_rec_time[:4])
+                month = int(mail_rec_time[4:6])
+                day = int(mail_rec_time[6:8])
+                mail_date = f"{year:04d}-{month:02d}-{day:02d}"
+            except (ValueError, IndexError):
+                mail_date = None
+        
         connection = get_db_connection()
         if connection:
             cursor = connection.cursor()
@@ -1948,7 +1978,7 @@ def update_mail_data(mail_id):
                     mail_dest = %s, mail_recTime = %s, mail_upliftTime = %s,
                     mail_arriveTime = %s, mail_deliverTime = %s, mail_routeInfo = %s,
                     mail_flightInfo = %s, mail_weight = %s, mail_quote = %s,
-                    mail_charge = %s, mail_carrCode = %s
+                    mail_charge = %s, mail_carrCode = %s, mail_date = %s
                 WHERE mail_id = %s
             """
             
@@ -1968,6 +1998,7 @@ def update_mail_data(mail_id):
                 data.get('mail_quote'),
                 data.get('mail_charge'),
                 data.get('mail_carrCode'),
+                mail_date,
                 mail_id
             ))
             
@@ -2078,6 +2109,201 @@ def get_import_progress(task_id):
     })
     
     return jsonify(progress_data)
+
+@app.route('/api/export_excel_mail_data', methods=['POST'])
+def export_excel_mail_data():
+    """Excel导出邮件数据"""
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        # 获取搜索条件
+        search_params = request.get_json() or {}
+        
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': '数据库连接失败'})
+        
+        cursor = connection.cursor(dictionary=True)
+        
+        # 构建查询条件（复用get_mail_data的逻辑）
+        where_conditions = []
+        query_params = []
+        
+        # 总包号查询
+        if 'receptacle_nos' in search_params and search_params['receptacle_nos']:
+            receptacle_list = [no.strip() for no in search_params['receptacle_nos'].split(',') if no.strip()]
+            if receptacle_list:
+                placeholders = ','.join(['%s'] * len(receptacle_list))
+                where_conditions.append(f"mail_receptacleNo IN ({placeholders})")
+                query_params.extend(receptacle_list)
+        
+        # 到达地查询
+        if 'destinations' in search_params and search_params['destinations']:
+            dest_list = [dest.strip() for dest in search_params['destinations'].split(',') if dest.strip()]
+            if dest_list:
+                dest_conditions = []
+                for dest in dest_list:
+                    dest_conditions.append("mail_dest LIKE %s")
+                    query_params.append(f"%{dest}%")
+                where_conditions.append(f"({' OR '.join(dest_conditions)})")
+        
+        # 时间范围查询
+        if 'time_type' in search_params and 'start_date' in search_params:
+            time_type = search_params['time_type']
+            start_date = search_params['start_date'].replace('-', '')
+            
+            if time_type in ['recTime', 'upliftTime', 'arriveTime', 'deliverTime']:
+                time_field = f"mail_{time_type}"
+                where_conditions.append(f"{time_field} >= %s")
+                query_params.append(start_date)
+                
+                if 'end_date' in search_params and search_params['end_date']:
+                    end_date = search_params['end_date'].replace('-', '')
+                    where_conditions.append(f"{time_field} <= %s")
+                    query_params.append(end_date)
+        
+        # 构建WHERE子句
+        where_clause = ""
+        if where_conditions:
+            where_clause = "WHERE " + " AND ".join(where_conditions)
+        
+        # 查询所有匹配的数据（不分页）
+        if not where_conditions:
+            # 如果没有搜索条件，导出最新的1000条记录
+            data_query = """
+                SELECT mail_id, mail_receptacleNo, mail_originPost, mail_destPost, 
+                       mail_dest, mail_recTime, mail_upliftTime, mail_arriveTime, 
+                       mail_deliverTime, mail_routeInfo, mail_flightInfo, mail_weight, 
+                       mail_quote, mail_charge, mail_carrCode, Mail_class, mail_settle_code, created_at
+                FROM mail_data 
+                ORDER BY created_at DESC 
+                LIMIT 1000
+            """
+            cursor.execute(data_query)
+        else:
+            # 有搜索条件时，导出所有匹配的记录
+            data_query = f"""
+                SELECT mail_id, mail_receptacleNo, mail_originPost, mail_destPost, 
+                       mail_dest, mail_recTime, mail_upliftTime, mail_arriveTime, 
+                       mail_deliverTime, mail_routeInfo, mail_flightInfo, mail_weight, 
+                       mail_quote, mail_charge, mail_carrCode, Mail_class, mail_settle_code, created_at
+                FROM mail_data {where_clause}
+                ORDER BY created_at DESC
+            """
+            cursor.execute(data_query, query_params)
+        
+        mail_data = cursor.fetchall()
+        
+        if not mail_data:
+            return jsonify({'success': False, 'message': '没有找到符合条件的数据'})
+        
+        # 创建Excel工作簿
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "邮件数据"
+        
+        # 定义表头
+        headers = [
+            '序号', '邮件类型', '邮件种类', '总包号', '始发局', '寄达局', '到达地',
+            '接收时间', '启运时间', '到达时间', '交邮时间', '收费路由', '航班',
+            '重量', '报价', '费用', '承运商代码', '结算代码'
+        ]
+        
+        # 设置表头样式
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        header_alignment = Alignment(horizontal="center", vertical="center")
+        border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+        
+        # 写入表头
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_alignment
+            cell.border = border
+        
+        # 写入数据
+        for row_idx, record in enumerate(mail_data, 2):
+            # 序号
+            ws.cell(row=row_idx, column=1, value=row_idx-1).border = border
+            # 邮件类型
+            ws.cell(row=row_idx, column=2, value=record.get('Mail_class', '')).border = border
+            # 邮件种类（暂时留空，根据实际需求填充）
+            ws.cell(row=row_idx, column=3, value='').border = border
+            # 总包号
+            ws.cell(row=row_idx, column=4, value=record.get('mail_receptacleNo', '')).border = border
+            # 始发局
+            ws.cell(row=row_idx, column=5, value=record.get('mail_originPost', '')).border = border
+            # 寄达局
+            ws.cell(row=row_idx, column=6, value=record.get('mail_destPost', '')).border = border
+            # 到达地
+            ws.cell(row=row_idx, column=7, value=record.get('mail_dest', '')).border = border
+            # 接收时间
+            ws.cell(row=row_idx, column=8, value=record.get('mail_recTime', '')).border = border
+            # 启运时间
+            ws.cell(row=row_idx, column=9, value=record.get('mail_upliftTime', '')).border = border
+            # 到达时间
+            ws.cell(row=row_idx, column=10, value=record.get('mail_arriveTime', '')).border = border
+            # 交邮时间
+            ws.cell(row=row_idx, column=11, value=record.get('mail_deliverTime', '')).border = border
+            # 收费路由
+            ws.cell(row=row_idx, column=12, value=record.get('mail_routeInfo', '')).border = border
+            # 航班
+            ws.cell(row=row_idx, column=13, value=record.get('mail_flightInfo', '')).border = border
+            # 重量
+            ws.cell(row=row_idx, column=14, value=record.get('mail_weight', '')).border = border
+            # 报价
+            ws.cell(row=row_idx, column=15, value=record.get('mail_quote', '')).border = border
+            # 费用
+            ws.cell(row=row_idx, column=16, value=record.get('mail_charge', '')).border = border
+            # 承运商代码
+            ws.cell(row=row_idx, column=17, value=record.get('mail_carrCode', '')).border = border
+            # 结算代码
+            ws.cell(row=row_idx, column=18, value=record.get('mail_settle_code', '')).border = border
+        
+        # 自动调整列宽
+        for column in ws.columns:
+            max_length = 0
+            column_letter = column[0].column_letter
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            adjusted_width = min(max_length + 2, 50)
+            ws.column_dimensions[column_letter].width = adjusted_width
+        
+        # 保存到内存
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        
+        # 生成文件名
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'邮件数据导出_{timestamp}.xlsx'
+        
+        return send_file(
+            output,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'导出失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if 'connection' in locals() and connection:
+            connection.close()
 
 @app.route('/api/import_excel_mail_data', methods=['POST'])
 def import_excel_mail_data():
@@ -2447,16 +2673,24 @@ def get_dashboard_stats():
         
         cursor = connection.cursor(dictionary=True)
         
-        # 获取最近6个月的月度统计数据（使用优化后的mail_date字段）
+        # 获取最近6个月的月度统计数据（修复mail_date为空的问题）
         monthly_stats_query = """
             SELECT 
-                DATE_FORMAT(mail_date, '%Y-%m') as month,
+                CASE 
+                    WHEN mail_date IS NOT NULL THEN DATE_FORMAT(mail_date, '%Y-%m')
+                    WHEN mail_recTime IS NOT NULL THEN CONCAT(LEFT(mail_recTime, 4), '-', SUBSTRING(mail_recTime, 5, 2))
+                    ELSE 'Unknown'
+                END as month,
                 ROUND(SUM(mail_charge), 2) as total_amount,
                 ROUND(SUM(mail_weight), 3) as total_weight,
                 COUNT(*) as total_count
             FROM mail_data 
-            WHERE mail_date IS NOT NULL AND mail_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
-            GROUP BY DATE_FORMAT(mail_date, '%Y-%m')
+            WHERE (
+                (mail_date IS NOT NULL AND mail_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH))
+                OR 
+                (mail_date IS NULL AND mail_recTime IS NOT NULL AND LEFT(mail_recTime, 6) >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 6 MONTH), '%Y%m'))
+            )
+            GROUP BY month
             ORDER BY month DESC
             LIMIT 6
         """
@@ -2720,7 +2954,7 @@ def calculate_bill_amount(filepath):
                     amount_str = row.get('金额', '0')
                 else:
                     # CN66格式的金额列
-                    amount_str = row.get('mail_amount', '0')
+                    amount_str = row.get('金额', '0')
                 
                 # 转换为浮点数并累加
                 try:
@@ -2914,8 +3148,8 @@ def get_bill_files():
                     'amount': bill_amount
                 })
         
-        # 按账务时期和邮件类型排序
-        files.sort(key=lambda x: (x['period'], x['mail_type']))
+        # 按年月降序排列，确保最新账单在最上面，然后按邮件类型排序
+        files.sort(key=lambda x: (x['year'], x['month'], x['mail_type']), reverse=True)
         
         return jsonify({'success': True, 'data': files})
         
@@ -2936,6 +3170,12 @@ def regenerate_bill():
         if not year or not month:
             return jsonify({'success': False, 'message': '年月参数不能为空'})
         
+        # 确保月份是整数类型
+        try:
+            month = int(month)
+        except (ValueError, TypeError):
+            return jsonify({'success': False, 'message': '月份参数格式错误'})
+        
         # 删除原有的账单文件
         invoices_dir = 'invoices'
         if os.path.exists(invoices_dir):
@@ -2944,7 +3184,7 @@ def regenerate_bill():
                     os.remove(os.path.join(invoices_dir, filename))
         
         # 重新生成账单（复用原有的生成逻辑）
-        year_month = f"{year}{month}"
+        year_month = f"{year}{month:02d}"
         
         connection = get_db_connection()
         if not connection:
@@ -2971,19 +3211,31 @@ def regenerate_bill():
         
         generated_files = []
         
-        # 生成PY账单
+        # 生成PY账单 (CN66格式)
         if py_data:
-            py_filename = f"PY{year}年{month}月天泽物流CN66账单.csv"
+            py_filename = f"PY{year}年{month:02d}月天泽物流CN66账单.csv"
             py_filepath = os.path.join('invoices', py_filename)
             generate_csv_bill(py_data, py_filepath, 'PY')
             generated_files.append(py_filename)
+            
+            # 生成PY账单 (CN51格式)
+            py_cn51_filename = f"PY{year}年{month:02d}月天泽物流CN51账单.csv"
+            py_cn51_filepath = os.path.join('invoices', py_cn51_filename)
+            generate_cn51_bill(py_data, py_cn51_filepath, 'PY')
+            generated_files.append(py_cn51_filename)
         
-        # 生成TY账单
+        # 生成TY账单 (CN66格式)
         if ty_data:
-            ty_filename = f"TY{year}年{month}月天泽物流CN66账单.csv"
+            ty_filename = f"TY{year}年{month:02d}月天泽物流CN66账单.csv"
             ty_filepath = os.path.join('invoices', ty_filename)
             generate_csv_bill(ty_data, ty_filepath, 'TY')
             generated_files.append(ty_filename)
+            
+            # 生成TY账单 (CN51格式)
+            ty_cn51_filename = f"TY{year}年{month:02d}月天泽物流CN51账单.csv"
+            ty_cn51_filepath = os.path.join('invoices', ty_cn51_filename)
+            generate_cn51_bill(ty_data, ty_cn51_filepath, 'TY')
+            generated_files.append(ty_cn51_filename)
         
         if generated_files:
             return jsonify({

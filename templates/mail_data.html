@@ -167,13 +167,16 @@
                     </div>
                 </div>
 
-                <!-- Excel导入和删除按钮 -->
+                <!-- Excel导入、删除和导出按钮 -->
                 <div class="action-buttons" style="margin-bottom: 20px; display: flex; gap: 10px;">
                     <button class="btn btn-success" onclick="showImportExcelModal()">
                         <i class="fas fa-file-excel"></i> Excel导入
                     </button>
                     <button class="btn btn-danger" onclick="deleteSelectedRows()" style="background-color: #dc3545; border-color: #dc3545;">
                         <i class="fas fa-trash"></i> 删除
+                    </button>
+                    <button class="btn btn-info" onclick="exportToExcel()" style="background-color: #17a2b8; border-color: #17a2b8;">
+                        <i class="fas fa-file-export"></i> Excel导出
                     </button>
                 </div>
 
@@ -1720,6 +1723,71 @@
             } catch (error) {
                 console.error('删除数据时发生错误:', error);
                 showMessage('删除失败: 网络错误', 'error');
+            }
+        }
+
+        // Excel导出功能
+        async function exportToExcel() {
+            try {
+                // 获取当前搜索条件（复用searchMailData的逻辑）
+                const receptacleNos = document.getElementById('receptacleNoInput').value.trim();
+                const dests = document.getElementById('destInput').value.trim();
+                const timeType = document.getElementById('timeTypeSelect').value;
+                const startDate = document.getElementById('startDate').value;
+                const endDate = document.getElementById('endDate').value;
+                
+                // 构建搜索参数
+                const searchParams = {};
+                if (receptacleNos) searchParams.receptacle_nos = receptacleNos;
+                if (dests) searchParams.destinations = dests;
+                if (timeType && startDate) {
+                    searchParams.time_type = timeType;
+                    searchParams.start_date = startDate;
+                    if (endDate) searchParams.end_date = endDate;
+                }
+                
+                // 显示加载提示
+                showMessage('正在导出数据，请稍候...', 'info');
+                
+                // 发送导出请求
+                const response = await fetch('/api/export_excel_mail_data', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(searchParams)
+                });
+                
+                if (response.ok) {
+                    // 获取文件名
+                    const contentDisposition = response.headers.get('Content-Disposition');
+                    let filename = '邮件数据导出.xlsx';
+                    if (contentDisposition) {
+                        const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+                        if (filenameMatch) {
+                            filename = filenameMatch[1];
+                        }
+                    }
+                    
+                    // 创建下载链接
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    
+                    showMessage('导出成功！', 'success');
+                } else {
+                    const result = await response.json();
+                    showMessage('导出失败: ' + (result.message || '未知错误'), 'error');
+                }
+            } catch (error) {
+                console.error('导出数据时发生错误:', error);
+                showMessage('导出失败: 网络错误', 'error');
             }
         }
 

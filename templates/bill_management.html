@@ -359,7 +359,7 @@
             
             let html = '';
             
-            Object.keys(groupedFiles).sort().forEach(period => {
+            Object.keys(groupedFiles).forEach(period => {
                 const periodFiles = groupedFiles[period];
                 
                 // 按邮件类型分组，用于金额合并显示

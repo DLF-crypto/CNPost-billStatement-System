@@ -333,10 +333,13 @@ body {
 /* 左侧菜单栏样式 */
 .sidebar {
     width: 250px;
+    min-width: 250px;
+    max-width: 250px;
     background: white;
     box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
     position: relative;
     z-index: 100;
+    flex-shrink: 0;
 }
 
 .sidebar-nav {
@@ -421,6 +424,8 @@ body {
     flex: 1;
     padding: 30px;
     background: transparent;
+    min-width: 0;
+    overflow-x: hidden;
 }
 
 .dashboard-content {
@@ -1381,36 +1386,62 @@ body {
     border: 1px solid #d0d7de;
     border-radius: 6px;
     overflow-x: auto;
+    overflow-y: auto;
     /* 确保表格容器可以垂直滚动 */
     max-height: 700px;
-    overflow-y: auto;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .bill-list .employee-table {
     width: 100%;
+    min-width: 1200px;
     border-collapse: collapse;
     font-size: 14px;
     background: white;
     border: 1px solid #d0d7de;
+    table-layout: auto;
 }
 
 .bill-list .employee-table th {
     background: #f6f8fa;
     color: #24292f;
-    padding: 12px 16px;
+    padding: 12px 8px;
     text-align: center;
     font-weight: 600;
     border: 1px solid #d0d7de;
     position: relative;
+    white-space: nowrap;
 }
 
+/* 为特定列设置最小宽度以确保基本显示 */
+.bill-list .employee-table th:nth-child(1) { min-width: 40px; } /* 复选框 */
+.bill-list .employee-table th:nth-child(2) { min-width: 60px; } /* 序号 */
+.bill-list .employee-table th:nth-child(5) { min-width: 200px; } /* 总包号 */
+.bill-list .employee-table th:nth-child(9) { min-width: 120px; } /* 接收时间 */
+.bill-list .employee-table th:nth-child(10) { min-width: 120px; } /* 启运时间 */
+.bill-list .employee-table th:nth-child(11) { min-width: 120px; } /* 到达时间 */
+.bill-list .employee-table th:nth-child(12) { min-width: 120px; } /* 交邮时间 */
+.bill-list .employee-table th:nth-child(13) { min-width: 150px; } /* 收费路由 */
+
 .bill-list .employee-table td {
-    padding: 12px 16px;
+    padding: 12px 8px;
     border: 1px solid #d0d7de;
     vertical-align: middle;
     text-align: center;
     background: white;
+    white-space: nowrap;
 }
+
+/* 为数据单元格设置相同的最小宽度 */
+.bill-list .employee-table td:nth-child(1) { min-width: 40px; }
+.bill-list .employee-table td:nth-child(2) { min-width: 60px; }
+.bill-list .employee-table td:nth-child(5) { min-width: 200px; }
+.bill-list .employee-table td:nth-child(9) { min-width: 120px; }
+.bill-list .employee-table td:nth-child(10) { min-width: 120px; }
+.bill-list .employee-table td:nth-child(11) { min-width: 120px; }
+.bill-list .employee-table td:nth-child(12) { min-width: 120px; }
+.bill-list .employee-table td:nth-child(13) { min-width: 150px; }
 
 .bill-list .employee-table tbody tr:hover {
     background-color: #f6f8fa;
