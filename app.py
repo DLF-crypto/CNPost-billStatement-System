@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, send_file
 import mysql.connector
 from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import datetime, timedelta
@@ -11,6 +11,9 @@ from datetime import datetime
 import re
 import threading
 import time
+import io
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 app = Flask(__name__)
 
@@ -2078,6 +2081,201 @@ def get_import_progress(task_id):
     })
     
     return jsonify(progress_data)
+
+@app.route('/api/export_excel_mail_data', methods=['POST'])
+def export_excel_mail_data():
+    """Excel导出邮件数据"""
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        # 获取搜索条件
+        search_params = request.get_json() or {}
+        
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': '数据库连接失败'})
+        
+        cursor = connection.cursor(dictionary=True)
+        
+        # 构建查询条件（复用get_mail_data的逻辑）
+        where_conditions = []
+        query_params = []
+        
+        # 总包号查询
+        if 'receptacle_nos' in search_params and search_params['receptacle_nos']:
+            receptacle_list = [no.strip() for no in search_params['receptacle_nos'].split(',') if no.strip()]
+            if receptacle_list:
+                placeholders = ','.join(['%s'] * len(receptacle_list))
+                where_conditions.append(f"mail_receptacleNo IN ({placeholders})")
+                query_params.extend(receptacle_list)
+        
+        # 到达地查询
+        if 'destinations' in search_params and search_params['destinations']:
+            dest_list = [dest.strip() for dest in search_params['destinations'].split(',') if dest.strip()]
+            if dest_list:
+                dest_conditions = []
+                for dest in dest_list:
+                    dest_conditions.append("mail_dest LIKE %s")
+                    query_params.append(f"%{dest}%")
+                where_conditions.append(f"({' OR '.join(dest_conditions)})")
+        
+        # 时间范围查询
+        if 'time_type' in search_params and 'start_date' in search_params:
+            time_type = search_params['time_type']
+            start_date = search_params['start_date'].replace('-', '')
+            
+            if time_type in ['recTime', 'upliftTime', 'arriveTime', 'deliverTime']:
+                time_field = f"mail_{time_type}"
+                where_conditions.append(f"{time_field} >= %s")
+                query_params.append(start_date)
+                
+                if 'end_date' in search_params and search_params['end_date']:
+                    end_date = search_params['end_date'].replace('-', '')
+                    where_conditions.append(f"{time_field} <= %s")
+                    query_params.append(end_date)
+        
+        # 构建WHERE子句
+        where_clause = ""
+        if where_conditions:
+            where_clause = "WHERE " + " AND ".join(where_conditions)
+        
+        # 查询所有匹配的数据（不分页）
+        if not where_conditions:
+            # 如果没有搜索条件，导出最新的1000条记录
+            data_query = """
+                SELECT mail_id, mail_receptacleNo, mail_originPost, mail_destPost, 
+                       mail_dest, mail_recTime, mail_upliftTime, mail_arriveTime, 
+                       mail_deliverTime, mail_routeInfo, mail_flightInfo, mail_weight, 
+                       mail_quote, mail_charge, mail_carrCode, Mail_class, mail_settle_code, created_at
+                FROM mail_data 
+                ORDER BY created_at DESC 
+                LIMIT 1000
+            """
+            cursor.execute(data_query)
+        else:
+            # 有搜索条件时，导出所有匹配的记录
+            data_query = f"""
+                SELECT mail_id, mail_receptacleNo, mail_originPost, mail_destPost, 
+                       mail_dest, mail_recTime, mail_upliftTime, mail_arriveTime, 
+                       mail_deliverTime, mail_routeInfo, mail_flightInfo, mail_weight, 
+                       mail_quote, mail_charge, mail_carrCode, Mail_class, mail_settle_code, created_at
+                FROM mail_data {where_clause}
+                ORDER BY created_at DESC
+            """
+            cursor.execute(data_query, query_params)
+        
+        mail_data = cursor.fetchall()
+        
+        if not mail_data:
+            return jsonify({'success': False, 'message': '没有找到符合条件的数据'})
+        
+        # 创建Excel工作簿
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "邮件数据"
+        
+        # 定义表头
+        headers = [
+            '序号', '邮件类型', '邮件种类', '总包号', '始发局', '寄达局', '到达地',
+            '接收时间', '启运时间', '到达时间', '交邮时间', '收费路由', '航班',
+            '重量', '报价', '费用', '承运商代码', '结算代码'
+        ]
+        
+        # 设置表头样式
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        header_alignment = Alignment(horizontal="center", vertical="center")
+        border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+        
+        # 写入表头
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_alignment
+            cell.border = border
+        
+        # 写入数据
+        for row_idx, record in enumerate(mail_data, 2):
+            # 序号
+            ws.cell(row=row_idx, column=1, value=row_idx-1).border = border
+            # 邮件类型
+            ws.cell(row=row_idx, column=2, value=record.get('Mail_class', '')).border = border
+            # 邮件种类（暂时留空，根据实际需求填充）
+            ws.cell(row=row_idx, column=3, value='').border = border
+            # 总包号
+            ws.cell(row=row_idx, column=4, value=record.get('mail_receptacleNo', '')).border = border
+            # 始发局
+            ws.cell(row=row_idx, column=5, value=record.get('mail_originPost', '')).border = border
+            # 寄达局
+            ws.cell(row=row_idx, column=6, value=record.get('mail_destPost', '')).border = border
+            # 到达地
+            ws.cell(row=row_idx, column=7, value=record.get('mail_dest', '')).border = border
+            # 接收时间
+            ws.cell(row=row_idx, column=8, value=record.get('mail_recTime', '')).border = border
+            # 启运时间
+            ws.cell(row=row_idx, column=9, value=record.get('mail_upliftTime', '')).border = border
+            # 到达时间
+            ws.cell(row=row_idx, column=10, value=record.get('mail_arriveTime', '')).border = border
+            # 交邮时间
+            ws.cell(row=row_idx, column=11, value=record.get('mail_deliverTime', '')).border = border
+            # 收费路由
+            ws.cell(row=row_idx, column=12, value=record.get('mail_routeInfo', '')).border = border
+            # 航班
+            ws.cell(row=row_idx, column=13, value=record.get('mail_flightInfo', '')).border = border
+            # 重量
+            ws.cell(row=row_idx, column=14, value=record.get('mail_weight', '')).border = border
+            # 报价
+            ws.cell(row=row_idx, column=15, value=record.get('mail_quote', '')).border = border
+            # 费用
+            ws.cell(row=row_idx, column=16, value=record.get('mail_charge', '')).border = border
+            # 承运商代码
+            ws.cell(row=row_idx, column=17, value=record.get('mail_carrCode', '')).border = border
+            # 结算代码
+            ws.cell(row=row_idx, column=18, value=record.get('mail_settle_code', '')).border = border
+        
+        # 自动调整列宽
+        for column in ws.columns:
+            max_length = 0
+            column_letter = column[0].column_letter
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            adjusted_width = min(max_length + 2, 50)
+            ws.column_dimensions[column_letter].width = adjusted_width
+        
+        # 保存到内存
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        
+        # 生成文件名
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'邮件数据导出_{timestamp}.xlsx'
+        
+        return send_file(
+            output,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'导出失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if 'connection' in locals() and connection:
+            connection.close()
 
 @app.route('/api/import_excel_mail_data', methods=['POST'])
 def import_excel_mail_data():
