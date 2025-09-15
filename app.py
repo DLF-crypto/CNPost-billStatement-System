@@ -2918,7 +2918,7 @@ def calculate_bill_amount(filepath):
                     amount_str = row.get('金额', '0')
                 else:
                     # CN66格式的金额列
-                    amount_str = row.get('mail_amount', '0')
+                    amount_str = row.get('金额', '0')
                 
                 # 转换为浮点数并累加
                 try:
@@ -3134,6 +3134,12 @@ def regenerate_bill():
         if not year or not month:
             return jsonify({'success': False, 'message': '年月参数不能为空'})
         
+        # 确保月份是整数类型
+        try:
+            month = int(month)
+        except (ValueError, TypeError):
+            return jsonify({'success': False, 'message': '月份参数格式错误'})
+        
         # 删除原有的账单文件
         invoices_dir = 'invoices'
         if os.path.exists(invoices_dir):
@@ -3142,7 +3148,7 @@ def regenerate_bill():
                     os.remove(os.path.join(invoices_dir, filename))
         
         # 重新生成账单（复用原有的生成逻辑）
-        year_month = f"{year}{month}"
+        year_month = f"{year}{month:02d}"
         
         connection = get_db_connection()
         if not connection:
@@ -3169,19 +3175,31 @@ def regenerate_bill():
         
         generated_files = []
         
-        # 生成PY账单
+        # 生成PY账单 (CN66格式)
         if py_data:
-            py_filename = f"PY{year}年{month}月天泽物流CN66账单.csv"
+            py_filename = f"PY{year}年{month:02d}月天泽物流CN66账单.csv"
             py_filepath = os.path.join('invoices', py_filename)
             generate_csv_bill(py_data, py_filepath, 'PY')
             generated_files.append(py_filename)
+            
+            # 生成PY账单 (CN51格式)
+            py_cn51_filename = f"PY{year}年{month:02d}月天泽物流CN51账单.csv"
+            py_cn51_filepath = os.path.join('invoices', py_cn51_filename)
+            generate_cn51_bill(py_data, py_cn51_filepath, 'PY')
+            generated_files.append(py_cn51_filename)
         
-        # 生成TY账单
+        # 生成TY账单 (CN66格式)
         if ty_data:
-            ty_filename = f"TY{year}年{month}月天泽物流CN66账单.csv"
+            ty_filename = f"TY{year}年{month:02d}月天泽物流CN66账单.csv"
             ty_filepath = os.path.join('invoices', ty_filename)
             generate_csv_bill(ty_data, ty_filepath, 'TY')
             generated_files.append(ty_filename)
+            
+            # 生成TY账单 (CN51格式)
+            ty_cn51_filename = f"TY{year}年{month:02d}月天泽物流CN51账单.csv"
+            ty_cn51_filepath = os.path.join('invoices', ty_cn51_filename)
+            generate_cn51_bill(ty_data, ty_cn51_filepath, 'TY')
+            generated_files.append(ty_cn51_filename)
         
         if generated_files:
             return jsonify({
