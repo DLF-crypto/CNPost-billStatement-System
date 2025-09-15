@@ -145,8 +145,8 @@ def validate_bill_data(data, connection, exclude_id=None):
 DB_CONFIG = {
     'host': 'localhost',
     'database': 'cnpost_bill_system',
-    'user': 'cnpost',
-    'password': '123456',
+    'user': 'root',
+    'password': '123456',  # 请替换为您的root密码
     'charset': 'utf8mb4',
     'use_unicode': True,
     'autocommit': False  # 手动控制事务
@@ -2673,23 +2673,16 @@ def get_dashboard_stats():
         
         cursor = connection.cursor(dictionary=True)
         
-        # 获取最近6个月的月度统计数据（修复mail_date为空的问题）
+        # 获取最近6个月的月度统计数据（使用mail_recTime字段）
         monthly_stats_query = """
             SELECT 
-                CASE 
-                    WHEN mail_date IS NOT NULL THEN DATE_FORMAT(mail_date, '%Y-%m')
-                    WHEN mail_recTime IS NOT NULL THEN CONCAT(LEFT(mail_recTime, 4), '-', SUBSTRING(mail_recTime, 5, 2))
-                    ELSE 'Unknown'
-                END as month,
+                CONCAT(LEFT(mail_recTime, 4), '-', SUBSTRING(mail_recTime, 5, 2)) as month,
                 ROUND(SUM(mail_charge), 2) as total_amount,
                 ROUND(SUM(mail_weight), 3) as total_weight,
                 COUNT(*) as total_count
             FROM mail_data 
-            WHERE (
-                (mail_date IS NOT NULL AND mail_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH))
-                OR 
-                (mail_date IS NULL AND mail_recTime IS NOT NULL AND LEFT(mail_recTime, 6) >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 6 MONTH), '%Y%m'))
-            )
+            WHERE mail_recTime IS NOT NULL 
+                AND LEFT(mail_recTime, 6) >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 6 MONTH), '%Y%m')
             GROUP BY month
             ORDER BY month DESC
             LIMIT 6
@@ -2773,7 +2766,7 @@ def get_destination_weight_by_month():
                 ROUND(SUM(mail_charge), 2) as total_amount,
                 COUNT(*) as total_count
             FROM mail_data 
-            WHERE DATE_FORMAT(mail_date, '%Y-%m') = %s
+            WHERE CONCAT(LEFT(mail_recTime, 4), '-', SUBSTRING(mail_recTime, 5, 2)) = %s
             GROUP BY mail_dest
             ORDER BY total_weight DESC
             LIMIT 20
@@ -2820,14 +2813,14 @@ def get_monthly_comparison_by_destinations():
         query = f"""
             SELECT 
                 mail_dest as destination,
-                DATE_FORMAT(mail_date, '%Y-%m') as month,
+                CONCAT(LEFT(mail_recTime, 4), '-', SUBSTRING(mail_recTime, 5, 2)) as month,
                 ROUND(SUM(mail_weight), 3) as total_weight,
                 ROUND(SUM(mail_charge), 2) as total_amount,
                 COUNT(*) as total_count
             FROM mail_data 
             WHERE mail_dest IN ({placeholders})
-            AND mail_date IS NOT NULL AND mail_date >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
-            GROUP BY mail_dest, DATE_FORMAT(mail_date, '%Y-%m')
+            AND mail_recTime IS NOT NULL AND LEFT(mail_recTime, 6) >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 12 MONTH), '%Y%m')
+            GROUP BY mail_dest, CONCAT(LEFT(mail_recTime, 4), '-', SUBSTRING(mail_recTime, 5, 2))
             ORDER BY month DESC, destination
         """
         
