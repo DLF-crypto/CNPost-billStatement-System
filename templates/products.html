@@ -89,6 +89,15 @@
                         </li>
                         {% endif %}
                         
+                        {% if 'bill_management' in permissions %}
+                        <li class="nav-item">
+                            <a href="{{ url_for('bill_management') }}" class="nav-link">
+                                <i class="fas fa-calculator"></i>
+                                <span>账单管理</span>
+                            </a>
+                        </li>
+                        {% endif %}
+                        
                         {% if 'reports' in permissions %}
                         <li class="nav-item">
                             <a href="#" class="nav-link">

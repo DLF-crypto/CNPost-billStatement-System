@@ -1025,14 +1025,7 @@
             });
         }
 
-        // 点击模态框外部关闭（仅编辑弹窗支持）
-        window.onclick = function(event) {
-            const editModal = document.getElementById('editBillModal');
-            
-            if (event.target === editModal) {
-                closeEditBillModal();
-            }
-        }
+        // 编辑弹窗不支持点击外部关闭，只能通过按钮关闭
     </script>
 </body>
 </html>

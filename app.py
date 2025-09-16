@@ -3169,21 +3169,14 @@ def regenerate_bill():
         except (ValueError, TypeError):
             return jsonify({'success': False, 'message': '月份参数格式错误'})
         
-        # 删除原有的账单文件
-        invoices_dir = 'invoices'
-        if os.path.exists(invoices_dir):
-            for filename in os.listdir(invoices_dir):
-                if f"{year}年{month}月" in filename and filename.endswith('.csv'):
-                    os.remove(os.path.join(invoices_dir, filename))
-        
-        # 重新生成账单（复用原有的生成逻辑）
-        year_month = f"{year}{month:02d}"
-        
         connection = get_db_connection()
         if not connection:
             return jsonify({'success': False, 'message': '数据库连接失败'})
         
         cursor = connection.cursor(dictionary=True)
+        
+        # 第一步：更新mail_data中的数据，根据bill_info中的信息
+        year_month = f"{year}{month:02d}"
         
         # 查询指定年月的邮件数据
         query = """
@@ -3192,6 +3185,71 @@ def regenerate_bill():
             ORDER BY Mail_class, mail_recTime
         """
         
+        cursor.execute(query, (f"{year_month}%",))
+        mail_data_list = cursor.fetchall()
+        
+        if not mail_data_list:
+            return jsonify({'success': False, 'message': f'{year}年{month}月没有找到邮件数据'})
+        
+        # 获取所有bill_info数据，建立目的地和邮件类型到账单信息的映射
+        cursor.execute("SELECT mail_class, des, route_info, flight_no, quote, carry_code FROM bill_info")
+        bill_info_data = cursor.fetchall()
+        
+        # 创建(邮件类型, 目的地)到账单信息的映射字典
+        bill_info_map = {}
+        for bill in bill_info_data:
+            key = (bill['mail_class'], bill['des'])
+            bill_info_map[key] = {
+                'route_info': bill['route_info'],
+                'flight_no': bill['flight_no'],
+                'quote': bill['quote'],
+                'carry_code': bill['carry_code']
+            }
+        
+        # 更新mail_data中的数据
+        updated_count = 0
+        for mail_record in mail_data_list:
+            mail_dest = mail_record['mail_dest']
+            mail_class = mail_record['Mail_class']  # 获取邮件类型
+            
+            # 使用邮件类型和目的地作为匹配键
+            key = (mail_class, mail_dest)
+            if key in bill_info_map:
+                bill_info = bill_info_map[key]
+                
+                # 计算新的mail_charge（重量 * 费率）
+                mail_weight = float(mail_record.get('mail_weight', 0)) if mail_record.get('mail_weight') else 0
+                new_quote = float(bill_info['quote']) if bill_info['quote'] else 0
+                new_charge = round(mail_weight * new_quote, 2) if mail_weight > 0 and new_quote > 0 else 0
+                
+                # 更新mail_data记录，包括mail_charge
+                update_query = """
+                    UPDATE mail_data 
+                    SET mail_routeInfo = %s, mail_flightInfo = %s, mail_quote = %s, mail_carrCode = %s, mail_charge = %s
+                    WHERE mail_id = %s
+                """
+                
+                cursor.execute(update_query, (
+                    bill_info['route_info'],
+                    bill_info['flight_no'],
+                    bill_info['quote'],
+                    bill_info['carry_code'],
+                    new_charge,
+                    mail_record['mail_id']
+                ))
+                updated_count += 1
+        
+        # 提交数据库更新
+        connection.commit()
+        
+        # 删除原有的账单文件
+        invoices_dir = 'invoices'
+        if os.path.exists(invoices_dir):
+            for filename in os.listdir(invoices_dir):
+                if f"{year}年{month}月" in filename and filename.endswith('.csv'):
+                    os.remove(os.path.join(invoices_dir, filename))
+        
+        # 重新查询更新后的邮件数据
         cursor.execute(query, (f"{year_month}%",))
         mail_data = cursor.fetchall()
         
@@ -3233,8 +3291,9 @@ def regenerate_bill():
         if generated_files:
             return jsonify({
                 'success': True, 
-                'message': f'成功重新生成{len(generated_files)}个账单文件',
-                'files': generated_files
+                'message': f'成功更新{updated_count}条邮件数据并重新生成{len(generated_files)}个账单文件',
+                'files': generated_files,
+                'updated_count': updated_count
             })
         else:
             return jsonify({'success': False, 'message': '没有找到PY或TY类型的邮件数据'})
