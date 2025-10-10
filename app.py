@@ -90,6 +90,26 @@ def check_destination_uniqueness(mail_class, destination, connection, exclude_id
     except Exception as e:
         return False, f"验证失败: {str(e)}"
 
+def check_flight_no_uniqueness(flight_no, connection, exclude_id=None):
+    """检查航班号唯一性"""
+    try:
+        cursor = connection.cursor()
+        if exclude_id:
+            query = "SELECT COUNT(*) FROM bill_info WHERE flight_no = %s AND id != %s"
+            cursor.execute(query, (flight_no, exclude_id))
+        else:
+            query = "SELECT COUNT(*) FROM bill_info WHERE flight_no = %s"
+            cursor.execute(query, (flight_no,))
+        
+        count = cursor.fetchone()[0]
+        cursor.close()
+        
+        if count > 0:
+            return False, "该航班号已存在，请使用其他航班号"
+        return True, ""
+    except Exception as e:
+        return False, f"验证失败: {str(e)}"
+
 def validate_bill_data(data, connection, exclude_id=None):
     """验证账单数据"""
     errors = []
@@ -124,15 +144,10 @@ def validate_bill_data(data, connection, exclude_id=None):
     if not carry_code:
         errors.append('承运代码不能为空')
     
-    # 检查目的地唯一性（只要邮件类型和目的地格式正确就检查）
-    mail_class = data.get('mail_class', '')
-    destination = data.get('des', '')
-    
-    # 只有当邮件类型和目的地都有效时才检查唯一性
-    if mail_class in ['TY', 'PY'] and destination and len(destination) == 3 and destination.isalpha():
-        is_valid, error_msg = check_destination_uniqueness(
-            mail_class, 
-            destination.upper(), 
+    # 验证航班号唯一性
+    if flight_no:
+        is_valid, error_msg = check_flight_no_uniqueness(
+            flight_no, 
             connection, 
             exclude_id
         )
@@ -1637,6 +1652,14 @@ def get_mail_data():
                                 end_date = search_params['end_date'].replace('-', '')
                                 where_conditions.append(f"{time_field} <= %s")
                                 query_params.append(end_date)
+                    
+                    # 航班号筛选（是否有航班号）
+                    if 'has_flight_no' in search_params:
+                        has_flight_no = search_params['has_flight_no']
+                        if has_flight_no == 'yes':
+                            where_conditions.append("mail_flightInfo IS NOT NULL AND mail_flightInfo != ''")
+                        elif has_flight_no == 'no':
+                            where_conditions.append("(mail_flightInfo IS NULL OR mail_flightInfo = '')")
                                 
                 except json.JSONDecodeError:
                     # 如果不是JSON格式，按原来的方式处理（兼容旧版本）
@@ -1836,6 +1859,54 @@ def get_bill_info_by_destination():
             })
         else:
             return jsonify({'success': False, 'message': '未找到该到达地的账单信息'})
+            
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'获取账单信息失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if 'connection' in locals() and connection:
+            connection.close()
+
+# 通过航班号获取账单信息管理中的相关数据
+@app.route('/api/get_bill_info_by_flight_no', methods=['POST'])
+def get_bill_info_by_flight_no():
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        data = request.get_json()
+        flight_no = data.get('flight_no', '').strip()
+        
+        if not flight_no:
+            return jsonify({'success': False, 'message': '航班号不能为空'})
+        
+        connection = get_db_connection()
+        cursor = connection.cursor()
+        
+        # 根据航班号查询账单信息
+        cursor.execute("""
+            SELECT mail_class, des, route_info, quote, carry_code 
+            FROM bill_info 
+            WHERE flight_no = %s
+            LIMIT 1
+        """, (flight_no,))
+        
+        result = cursor.fetchone()
+        
+        if result:
+            return jsonify({
+                'success': True,
+                'data': {
+                    'mail_class': result[0] or '',     # 邮件类型
+                    'destination': result[1] or '',    # 目的地
+                    'route_info': result[2] or '',     # 路由信息
+                    'quote': result[3] or 0,           # 报价
+                    'carry_code': result[4] or ''      # 承运代码
+                }
+            })
+        else:
+            return jsonify({'success': False, 'message': '未找到该航班号的账单信息'})
             
     except Exception as e:
         return jsonify({'success': False, 'message': f'获取账单信息失败: {str(e)}'})
@@ -2345,7 +2416,10 @@ def import_excel_mail_data():
         })
         
         # 检查必需的列
-        required_columns = ['邮件类型', '总包号', '到达地', '接收时间', '启运时间', '到达时间', '交邮时间']
+        required_columns = ['总包号', '接收时间', '启运时间', '到达时间', '交邮时间']
+        optional_columns = ['航班号']
+        all_allowed_columns = required_columns + optional_columns
+        
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
             import_progress[task_id].update({
@@ -2411,17 +2485,6 @@ def import_excel_mail_data():
                     'current': current_row,
                     'message': f'正在验证第 {current_row}/{total_rows} 行数据...'
                 })
-            
-                # 验证邮件类型
-                mail_class = str(row['邮件类型']).strip() if pd.notna(row['邮件类型']) else ''
-                if not mail_class:
-                    row_errors.append('邮件类型不能为空')
-                    mail_class = ''  # 确保有默认值
-                elif mail_class.upper() not in ['PY', 'TY']:
-                    row_errors.append('邮件类型只能是PY或TY')
-                    mail_class = ''  # 确保有默认值
-                else:
-                    mail_class = mail_class.upper()  # 转换为大写
                 
                 # 验证总包号
                 receptacle_no = str(row['总包号']).strip() if pd.notna(row['总包号']) else ''
@@ -2434,13 +2497,6 @@ def import_excel_mail_data():
                 else:
                     receptacle_no = receptacle_no.upper()  # 转换为大写
                 
-                # 验证到达地
-                destination = str(row['到达地']).strip().upper() if pd.notna(row['到达地']) else ''
-                if not destination:
-                    row_errors.append('到达地不能为空')
-                elif not re.match(r'^[A-Z]{3}$', destination):
-                    row_errors.append('到达地格式不正确（3位大写字母）')
-            
                 # 验证时间字段
                 time_fields = {
                     '接收时间': 'rec_time',
@@ -2465,6 +2521,11 @@ def import_excel_mail_data():
                         except:
                             row_errors.append(f'{field_name}格式不正确，应为日期格式')
                 
+                # 验证航班号（可选）
+                flight_no = ''
+                if '航班号' in df.columns and pd.notna(row['航班号']):
+                    flight_no = str(row['航班号']).strip()
+                
                 # 检查文件内总包号重复
                 if receptacle_no and receptacle_no in seen_receptacle_nos:
                     row_errors.append(f'总包号"{receptacle_no}"在文件中重复')
@@ -2475,65 +2536,73 @@ def import_excel_mail_data():
                 if receptacle_no and not row_errors:
                     if receptacle_no in existing_receptacle_nos:
                         row_errors.append(f'总包号"{receptacle_no}"已存在于数据库中')
-            
+                
                 if row_errors:
                     errors.extend([{'row': row_num, 'message': error} for error in row_errors])
                 else:
-                    # 通过到达地查询账单信息（使用缓存）
-                    bill_info_key = (destination, mail_class)
-                    bill_info = bill_info_cache.get(bill_info_key)
+                    # 初始化默认值
+                    mail_class = ''
+                    destination = ''
+                    mail_routeInfo = ''
+                    mail_quote = 0
+                    mail_carrCode = ''
+                    settle_code = ''
                     
-                    if not bill_info:
-                        errors.append({
-                            'row': row_num, 
-                            'message': f'无法查询到到达地"{destination}"的账单信息'
-                        })
-                    else:
-                        # 查询邮件种类（使用缓存）
-                        identifier1 = receptacle_no[13:15]  # 总包号第14-15位
-                        identifier2 = receptacle_no[5:6]    # 总包号第6位
+                    # 如果有航班号，从账单信息中查找对应信息
+                    if flight_no:
+                        # 根据航班号查找账单信息
+                        bill_info_found = None
+                        for (dest, mail_type), bill_data in bill_info_cache.items():
+                            if bill_data[0] == flight_no:  # flight_no 匹配
+                                bill_info_found = bill_data
+                                mail_class = mail_type
+                                destination = dest
+                                break
                         
-                        # 先尝试只用identifier1查询
-                        settle_code = products_cache.get((identifier1, None))
-                        
-                        # 如果没找到且identifier2不为空，尝试组合查询
-                        if not settle_code and identifier2:
-                            settle_code = products_cache.get((identifier1, identifier2))
-                        
-                        if not settle_code:
-                            errors.append({
-                                'row': row_num,
-                                'message': f'无法查询到总包号"{receptacle_no}"对应的邮件种类信息'
-                            })
-                        else:
-                            # 计算重量（总包号后3位除以10）
-                            weight = int(receptacle_no[-3:]) / 10
+                        if bill_info_found:
+                            mail_routeInfo = bill_info_found[1]   # route_info
+                            mail_quote = bill_info_found[2]       # quote
+                            mail_carrCode = bill_info_found[3]    # carry_code
                             
-                            # 计算金额（确保类型兼容）
-                            charge = weight * float(bill_info[2]) if bill_info[2] else 0
+                            # 查询邮件种类（使用缓存）
+                            identifier1 = receptacle_no[13:15]  # 总包号第14-15位
+                            identifier2 = receptacle_no[5:6]    # 总包号第6位
                             
-                            # 自动获取始发局和寄达局
-                            origin_office = receptacle_no[:6]   # 总包号第1-6位作为始发局
-                            dest_office = receptacle_no[6:12]   # 总包号第7-12位作为寄达局
-                        
-                            valid_data.append({
-                                'mail_class': mail_class,
-                                'receptacle_no': receptacle_no,
-                                'destination': destination,
-                                'origin_office': origin_office,  # 始发局
-                                'dest_office': dest_office,      # 寄达局
-                                'settle_code': settle_code,       # 邮件种类
-                                'rec_time': parsed_times['rec_time'],
-                                'uplift_time': parsed_times['uplift_time'],
-                                'arrive_time': parsed_times['arrive_time'],
-                                'deliver_time': parsed_times['deliver_time'],
-                                'mail_flightInfo': bill_info[0],  # flight_no → mail_flightInfo
-                                'mail_routeInfo': bill_info[1],   # route_info → mail_routeInfo
-                                'mail_quote': bill_info[2],       # quote → mail_quote
-                                'mail_carrCode': bill_info[3],    # carry_code → mail_carrCode
-                                'weight': weight,
-                                'charge': charge
-                            })
+                            # 先尝试只用identifier1查询
+                            settle_code = products_cache.get((identifier1, None), '')
+                            
+                            # 如果没找到且identifier2不为空，尝试组合查询
+                            if not settle_code and identifier2:
+                                settle_code = products_cache.get((identifier1, identifier2), '')
+                    
+                    # 计算重量（总包号后3位除以10）
+                    weight = int(receptacle_no[-3:]) / 10 if receptacle_no else 0
+                    
+                    # 计算金额（确保类型兼容）
+                    charge = weight * float(mail_quote) if mail_quote else 0
+                    
+                    # 自动获取始发局和寄达局
+                    origin_office = receptacle_no[:6] if receptacle_no else ''   # 总包号第1-6位作为始发局
+                    dest_office = receptacle_no[6:12] if receptacle_no else ''   # 总包号第7-12位作为寄达局
+                
+                    valid_data.append({
+                        'mail_class': mail_class,
+                        'receptacle_no': receptacle_no,
+                        'destination': destination,
+                        'origin_office': origin_office,
+                        'dest_office': dest_office,
+                        'settle_code': settle_code,
+                        'rec_time': parsed_times['rec_time'],
+                        'uplift_time': parsed_times['uplift_time'],
+                        'arrive_time': parsed_times['arrive_time'],
+                        'deliver_time': parsed_times['deliver_time'],
+                        'mail_flightInfo': flight_no,
+                        'mail_routeInfo': mail_routeInfo,
+                        'mail_quote': mail_quote,
+                        'mail_carrCode': mail_carrCode,
+                        'weight': weight,
+                        'charge': charge
+                    })
         
         finally:
             cursor.close()
@@ -3400,7 +3469,7 @@ def init_bill_info_table():
                 mail_class VARCHAR(100) NOT NULL COMMENT '邮件类型',
                 des VARCHAR(200) NOT NULL COMMENT '目的地',
                 route_info VARCHAR(500) COMMENT '路由信息',
-                flight_no VARCHAR(100) COMMENT '航班信息',
+                flight_no VARCHAR(100) UNIQUE COMMENT '航班信息',
                 quote DECIMAL(10,2) COMMENT '报价',
                 carry_code VARCHAR(100) COMMENT '运能编码',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -3409,6 +3478,16 @@ def init_bill_info_table():
             """
             
             cursor.execute(create_bill_info_table)
+            
+            # 为现有表添加航班号唯一约束（如果还没有）
+            try:
+                cursor.execute("ALTER TABLE bill_info ADD UNIQUE INDEX idx_flight_no (flight_no)")
+                print("已为航班号字段添加唯一约束")
+            except Exception as e:
+                if "Duplicate key name" in str(e) or "already exists" in str(e):
+                    print("航班号唯一约束已存在")
+                else:
+                    print(f"添加航班号唯一约束时出错: {e}")
             
             # 创建角色表
             create_roles_table = """

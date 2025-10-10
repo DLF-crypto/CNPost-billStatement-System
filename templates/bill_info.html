@@ -172,10 +172,10 @@
                             <thead>
                                 <tr>
                                     <th>序号</th>
+                                    <th>航班号</th>
                                     <th>邮件类型</th>
                                     <th>目的地</th>
                                     <th>路由信息</th>
-                                    <th>航班号</th>
                                     <th>报价</th>
                                     <th>承运代码</th>
                                     <th>操作</th>
@@ -253,7 +253,7 @@
                     </div>
                     <div class="form-group">
                         <label for="flight_no">航班号: <span style="color: red;">*</span></label>
-                        <input type="text" id="flight_no" name="flight_no" required placeholder="请输入航班号" oninput="validateRequired(this)">
+                        <input type="text" id="flight_no" name="flight_no" required placeholder="请输入航班号（必须唯一）" oninput="validateRequired(this)">
                         <div class="error-message" id="flight_no_error"></div>
                     </div>
                     <div class="form-group">
@@ -302,7 +302,7 @@
                     </div>
                     <div class="form-group">
                         <label for="edit_flight_no">航班号: <span style="color: red;">*</span></label>
-                        <input type="text" id="edit_flight_no" name="flight_no" required placeholder="请输入航班号" oninput="validateRequired(this, 'edit_')">
+                        <input type="text" id="edit_flight_no" name="flight_no" required placeholder="请输入航班号（必须唯一）" oninput="validateRequired(this, 'edit_')">
                         <div class="error-message" id="edit_flight_no_error"></div>
                     </div>
                     <div class="form-group">
@@ -416,10 +416,10 @@
                 
                 row.innerHTML = `
                     <td>${serialNumber}</td>
+                    <td>${bill.flight_no || '-'}</td>
                     <td>${bill.mail_class || '-'}</td>
                     <td>${bill.des || '-'}</td>
                     <td>${bill.route_info || '-'}</td>
-                    <td>${bill.flight_no || '-'}</td>
                     <td>${bill.quote || '-'}</td>
                     <td>${bill.carry_code || '-'}</td>
                     <td class="table-actions">
@@ -925,7 +925,7 @@
             const tableRows = document.querySelectorAll('.employee-table tbody tr');
             
             tableRows.forEach(row => {
-                const destinationCell = row.cells[2]; // 目的地列（第3列，索引为2）
+                const destinationCell = row.cells[3]; // 目的地列（第4列，索引为3）
                 if (destinationCell) {
                     const destination = destinationCell.textContent.trim().toUpperCase();
                     if (searchTerm === '' || destination.includes(searchTerm)) {
