@@ -374,6 +374,11 @@
                         <li>如果任何一条数据验证失败，整个导入将被取消</li>
                         <li>系统会自动填充始发局、寄达局、重量等信息</li>
                     </ul>
+                    <div style="margin: 15px 0;">
+                        <button type="button" class="btn btn-info" onclick="downloadTemplate()" style="background-color: #17a2b8; border-color: #17a2b8;">
+                            <i class="fas fa-download"></i> 下载模板
+                        </button>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="excelFile">选择Excel文件 <span class="required">*</span></label>
@@ -1455,8 +1460,23 @@
             function handleImportComplete(data) {
                 // 完成进度条
                 progressFill.style.width = '100%';
-                if (data.status === 'completed' && data.imported_count) {
-                    progressText.textContent = `导入完成！共处理 ${data.imported_count} 条数据`;
+                
+                // 检查导入结果
+                let importedCount = 0;
+                
+                // 从各种可能的字段中获取导入数量
+                if (data.imported_count !== undefined) {
+                    importedCount = data.imported_count;
+                } else if (data.message && data.message.includes('成功导入')) {
+                    // 从消息中提取数字
+                    const match = data.message.match(/(成功导入|\u5bfc入\u5b8c成！\u5171成功导入)\s*(\d+)/);
+                    if (match) {
+                        importedCount = parseInt(match[2]);
+                    }
+                }
+                
+                if (data.status === 'completed') {
+                    progressText.textContent = `导入完成！共处理 ${importedCount} 条数据`;
                 } else if (data.status === 'error') {
                     progressText.textContent = data.message || '导入失败';
                 } else {
@@ -1470,7 +1490,6 @@
                 document.getElementById('importBtn').disabled = false;
                 
                 if (data.status === 'completed' || data.success) {
-                    const importedCount = data.imported_count || 0;
                     document.getElementById('importResult').innerHTML = `
                         <div class="alert alert-success">
                             <i class="fas fa-check-circle"></i>
@@ -1799,6 +1818,45 @@
             } catch (error) {
                 console.error('导出数据时发生错误:', error);
                 showMessage('导出失败: 网络错误', 'error');
+            }
+        }
+
+        // 下载模板函数
+        async function downloadTemplate() {
+            try {
+                // 显示加载提示
+                showMessage('正在准备下载模板...', 'info');
+                
+                // 发送请求获取模板文件
+                const response = await fetch('/api/download_mail_template');
+                
+                if (response.ok) {
+                    // 获取文件内容
+                    const blob = await response.blob();
+                    
+                    // 创建下载链接
+                    const url = window.URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = '邮件数据导入模板.xlsx';
+                    link.style.display = 'none';
+                    
+                    // 添加到页面并触发下载
+                    document.body.appendChild(link);
+                    link.click();
+                    
+                    // 清理资源
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(link);
+                    
+                    showMessage('模板下载成功！', 'success');
+                } else {
+                    const result = await response.json();
+                    showMessage('下载失败: ' + (result.message || '未知错误'), 'error');
+                }
+            } catch (error) {
+                console.error('下载模板失败:', error);
+                showMessage('下载模板失败，请稍后重试', 'error');
             }
         }
 

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, send_file
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, send_file, make_response
 import mysql.connector
 from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import datetime, timedelta
@@ -2678,7 +2678,8 @@ def import_excel_mail_data():
                 import_progress[task_id].update({
                     'status': 'completed',
                     'current': total_rows,
-                    'message': f'导入完成！共成功导入 {imported_count} 条数据'
+                    'message': f'导入完成！共成功导入 {imported_count} 条数据',
+                    'imported_count': imported_count  # 添加这个字段到进度数据中
                 })
                 
                 return jsonify({
@@ -2951,6 +2952,27 @@ def generate_bill():
         
         if not mail_data:
             return jsonify({'success': False, 'message': f'{year}年{month}月没有找到邮件数据'})
+        
+        # 检查是否有航班号为空的数据
+        missing_flight_data = []
+        for row in mail_data:
+            if not row.get('mail_flightInfo') or str(row.get('mail_flightInfo')).strip() == '':
+                missing_flight_data.append(row.get('mail_receptacleNo', '未知总包号'))
+        
+        # 如果有数据缺少航班号，返回错误
+        if missing_flight_data:
+            # 限制显示数量，避免信息过长
+            display_count = min(len(missing_flight_data), 10)
+            error_message = f'生成账单失败：发现 {len(missing_flight_data)} 条数据缺少航班号信息，无法生成账单。\n\n'
+            error_message += f'缺少航班号的总包号（前{display_count}条）：\n'
+            error_message += '\n'.join(f'• {receptacle_no}' for receptacle_no in missing_flight_data[:display_count])
+            
+            if len(missing_flight_data) > display_count:
+                error_message += f'\n... 还有 {len(missing_flight_data) - display_count} 条数据'
+            
+            error_message += '\n\n请先在账单信息管理中配置对应的航班号信息，或在邮件数据中填写航班号后重新生成账单。'
+            
+            return jsonify({'success': False, 'message': error_message})
         
         # 按邮件类型分组
         py_data = [row for row in mail_data if row['Mail_class'] == 'PY']
@@ -3325,6 +3347,27 @@ def regenerate_bill():
         if not mail_data:
             return jsonify({'success': False, 'message': f'{year}年{month}月没有找到邮件数据'})
         
+        # 检查是否有航班号为空的数据
+        missing_flight_data = []
+        for row in mail_data:
+            if not row.get('mail_flightInfo') or str(row.get('mail_flightInfo')).strip() == '':
+                missing_flight_data.append(row.get('mail_receptacleNo', '未知总包号'))
+        
+        # 如果有数据缺少航班号，返回错误
+        if missing_flight_data:
+            # 限制显示数量，避免信息过长
+            display_count = min(len(missing_flight_data), 10)
+            error_message = f'重新生成账单失败：发现 {len(missing_flight_data)} 条数据缺少航班号信息，无法生成账单。\n\n'
+            error_message += f'缺少航班号的总包号（前{display_count}条）：\n'
+            error_message += '\n'.join(f'• {receptacle_no}' for receptacle_no in missing_flight_data[:display_count])
+            
+            if len(missing_flight_data) > display_count:
+                error_message += f'\n... 还有 {len(missing_flight_data) - display_count} 条数据'
+            
+            error_message += '\n\n请先在账单信息管理中配置对应的航班号信息，或在邮件数据中填写航班号后重新生成账单。'
+            
+            return jsonify({'success': False, 'message': error_message})
+        
         # 按邮件类型分组
         py_data = [row for row in mail_data if row['Mail_class'] == 'PY']
         ty_data = [row for row in mail_data if row['Mail_class'] == 'TY']
@@ -3445,6 +3488,73 @@ def download_bill(filename):
         
     except Exception as e:
         return jsonify({'error': f'下载失败: {str(e)}'}), 500
+
+@app.route('/api/download_mail_template')
+def download_mail_template():
+    """下载邮件数据导入模板"""
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        # 创建Excel工作簿
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = "邮件数据导入模板"
+        
+        # 设置表头
+        headers = [
+            '总包号', '接收时间', '启运时间', '到达时间', '交邮时间', '航班号'
+        ]
+        
+        # 写入表头
+        for col_num, header in enumerate(headers, 1):
+            cell = worksheet.cell(row=1, column=col_num)
+            cell.value = header
+            cell.font = Font(bold=True)
+            cell.alignment = Alignment(horizontal='center')
+            cell.fill = PatternFill(start_color='CCE5FF', end_color='CCE5FF', fill_type='solid')
+        
+        # 添加示例数据
+        sample_data = [
+            ['ABCDEFGHIJKLMNO12345678901234', '2025-08-01 10:00:00', '2025-08-01 12:00:00', 
+             '2025-08-02 08:00:00', '2025-08-02 10:00:00', 'CA123'],
+            ['BCDEFGHIJKLMNOP23456789012345', '2025-08-01 11:00:00', '2025-08-01 13:00:00', 
+             '2025-08-02 09:00:00', '2025-08-02 11:00:00', 'MU456']
+        ]
+        
+        for row_num, row_data in enumerate(sample_data, 2):
+            for col_num, value in enumerate(row_data, 1):
+                worksheet.cell(row=row_num, column=col_num, value=value)
+        
+        # 设置列宽
+        column_widths = [30, 20, 20, 20, 20, 15]
+        for col_num, width in enumerate(column_widths, 1):
+            worksheet.column_dimensions[worksheet.cell(row=1, column=col_num).column_letter].width = width
+        
+        # 添加说明信息
+        worksheet.cell(row=5, column=1, value="说明：")
+        worksheet.cell(row=6, column=1, value="1. 总包号：前15位字母+后14位数字，共29位")
+        worksheet.cell(row=7, column=1, value="2. 时间格式：YYYY-MM-DD HH:MM:SS")
+        worksheet.cell(row=8, column=1, value="3. 必填字段：总包号、接收时间、启运时间、到达时间、交邮时间")
+        worksheet.cell(row=9, column=1, value="4. 可选字段：航班号（如填写，系统将自动带出相关信息）")
+        worksheet.cell(row=10, column=1, value="5. 示例数据可删除，请按格式填写实际数据")
+        
+        # 保存到内存
+        import io
+        output = io.BytesIO()
+        workbook.save(output)
+        output.seek(0)
+        
+        # 创建响应
+        response = make_response(output.getvalue())
+        response.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        # 使用简单的文件名，避免编码问题
+        response.headers['Content-Disposition'] = 'attachment; filename="mail_template.xlsx"'
+        
+        return response
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'生成模板失败: {str(e)}'})
 
 @app.route('/logout')
 def logout():
