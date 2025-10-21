@@ -205,10 +205,7 @@
                             <label for="billYear">年份 <span class="required">*</span></label>
                             <select id="billYear" name="year" required>
                                 <option value="">请选择年份</option>
-                                <option value="2023">2023年</option>
-                                <option value="2024">2024年</option>
-                                <option value="2025">2025年</option>
-                                <option value="2026">2026年</option>
+                                <!-- 动态生成2023-2050年的选项 -->
                             </select>
                         </div>
                         <div class="form-group">
@@ -274,6 +271,21 @@
     <script>
         // 显示生成账单模态框
         function showGenerateBillModal() {
+            // 初始化年份下拉框（2023-2050年）
+            const yearSelect = document.getElementById('billYear');
+            if (yearSelect.options.length <= 1) { // 只有默认选项时才初始化
+                const currentYear = new Date().getFullYear();
+                for (let year = 2023; year <= 2050; year++) {
+                    const option = document.createElement('option');
+                    option.value = year;
+                    option.textContent = year + '年';
+                    // 默认选中当前年份
+                    if (year === currentYear) {
+                        option.selected = true;
+                    }
+                    yearSelect.appendChild(option);
+                }
+            }
             document.getElementById('generateBillModal').style.display = 'block';
         }
 

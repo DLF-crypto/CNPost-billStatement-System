@@ -3,11 +3,9 @@ import mysql.connector
 from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import datetime, timedelta
 import pandas as pd
-from werkzeug.utils import secure_filename
 import os
 from mysql.connector import Error
 import json
-from datetime import datetime
 import re
 import threading
 import time
@@ -26,14 +24,16 @@ app.secret_key = 'cnpost_invoice_system_2024'
 # 配置session过期时间为24小时
 app.permanent_session_lifetime = timedelta(hours=24)
 
-# 配置上传文件夹
-UPLOAD_FOLDER = 'uploads'
+# 配置允许的Excel文件扩展名
 ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# 确保上传文件夹存在
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
+# 配置账单文件存储目录
+INVOICES_FOLDER = 'invoices'
+
+# 确保账单存储目录存在
+if not os.path.exists(INVOICES_FOLDER):
+    os.makedirs(INVOICES_FOLDER)
+    print(f"已创建账单存储目录: {INVOICES_FOLDER}")
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -2512,14 +2512,27 @@ def import_excel_mail_data():
                         row_errors.append(f'{field_name}不能为空')
                     else:
                         try:
+                            parsed_time = None
+                            # 尝试多种时间格式解析
                             if isinstance(time_value, str):
-                                parsed_time = datetime.strptime(time_value, '%Y-%m-%d %H:%M:%S')
+                                # 移除前后空格
+                                time_value = time_value.strip()
+                                # 尝试多种日期格式
+                                for fmt in ['%Y-%m-%d %H:%M:%S', '%Y/%m/%d %H:%M:%S', '%Y-%m-%d', '%Y/%m/%d', '%Y%m%d']:
+                                    try:
+                                        parsed_time = datetime.strptime(time_value, fmt)
+                                        break
+                                    except ValueError:
+                                        continue
+                                if parsed_time is None:
+                                    raise ValueError(f"无法解析时间格式: {time_value}")
                             else:
+                                # 使用pandas处理Excel日期数字格式
                                 parsed_time = pd.to_datetime(time_value).to_pydatetime()
                             # 转换为YYYYMMDD格式的字符串
                             parsed_times[field_key] = parsed_time.strftime('%Y%m%d')
-                        except:
-                            row_errors.append(f'{field_name}格式不正确，应为日期格式')
+                        except Exception as e:
+                            row_errors.append(f'{field_name}格式不正确（当前值: {time_value}，错误: {str(e)}）')
                 
                 # 验证航班号（可选）
                 flight_no = ''
@@ -2552,12 +2565,26 @@ def import_excel_mail_data():
                     if flight_no:
                         # 根据航班号查找账单信息
                         bill_info_found = None
+                        
+                        # 尝试完整匹配
                         for (dest, mail_type), bill_data in bill_info_cache.items():
                             if bill_data[0] == flight_no:  # flight_no 匹配
                                 bill_info_found = bill_data
                                 mail_class = mail_type
                                 destination = dest
                                 break
+                        
+                        # 如果完整匹配失败，尝试部分匹配（处理组合航班号）
+                        if not bill_info_found and '-' in flight_no:
+                            # 将组合航班号拆分（如 ZK001HX741-SU275 拆分为 [ZK001HX741, SU275]）
+                            flight_parts = [part.strip() for part in flight_no.split('-')]
+                            for (dest, mail_type), bill_data in bill_info_cache.items():
+                                # 检查账单中的航班号是否包含在组合航班号中
+                                if bill_data[0] and any(bill_data[0] in part or part in bill_data[0] for part in flight_parts):
+                                    bill_info_found = bill_data
+                                    mail_class = mail_type
+                                    destination = dest
+                                    break
                         
                         if bill_info_found:
                             mail_routeInfo = bill_info_found[1]   # route_info
