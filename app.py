@@ -2166,6 +2166,46 @@ def delete_multiple_mail_data():
         if 'connection' in locals() and connection:
             connection.close()
 
+@app.route('/api/clear_all_mail_data', methods=['POST'])
+def clear_all_mail_data():
+    """清空所有邮件数据"""
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor()
+            
+            # 先获取总数
+            cursor.execute("SELECT COUNT(*) FROM mail_data")
+            total_count = cursor.fetchone()[0]
+            
+            if total_count == 0:
+                return jsonify({'success': False, 'message': '没有数据需要清空'})
+            
+            # 执行清空操作
+            cursor.execute("DELETE FROM mail_data")
+            connection.commit()
+            
+            deleted_count = cursor.rowcount
+            
+            return jsonify({
+                'success': True, 
+                'message': f'成功清空所有邮件数据，共删除 {deleted_count} 条记录',
+                'deleted_count': deleted_count
+            })
+        else:
+            return jsonify({'success': False, 'message': '数据库连接失败'})
+            
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'清空失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if 'connection' in locals() and connection:
+            connection.close()
+
 @app.route('/api/import_progress/<task_id>', methods=['GET'])
 def get_import_progress(task_id):
     """获取导入进度"""
@@ -2450,12 +2490,19 @@ def import_excel_mail_data():
             cursor.execute("SELECT mail_receptacleNo FROM mail_data")
             existing_receptacle_nos = set(row[0] for row in cursor.fetchall())
             
-            # 2. 预加载账单信息
-            cursor.execute("SELECT des, mail_class, flight_no, route_info, quote, carry_code FROM bill_info")
-            bill_info_cache = {}
+            # 2. 预加载账单信息（使用航班号作为键）
+            cursor.execute("SELECT flight_no, des, mail_class, route_info, quote, carry_code FROM bill_info")
+            bill_info_cache = {}  # 以航班号为键
             for row in cursor.fetchall():
-                key = (row[0], row[1])  # (destination, mail_class)
-                bill_info_cache[key] = (row[2], row[3], row[4], row[5])  # (flight_no, route_info, quote, carry_code)
+                flight_no = row[0]
+                if flight_no:  # 只缓存有航班号的记录
+                    bill_info_cache[flight_no] = {
+                        'des': row[1],
+                        'mail_class': row[2],
+                        'route_info': row[3],
+                        'quote': row[4],
+                        'carry_code': row[5]
+                    }
             
             # 3. 预加载产品信息
             cursor.execute("SELECT product_identifier1, product_identifier2, product_settle_code FROM products")
@@ -2534,10 +2581,14 @@ def import_excel_mail_data():
                         except Exception as e:
                             row_errors.append(f'{field_name}格式不正确（当前值: {time_value}，错误: {str(e)}）')
                 
-                # 验证航班号（可选）
+                # 验证航班号（必填项）
                 flight_no = ''
                 if '航班号' in df.columns and pd.notna(row['航班号']):
                     flight_no = str(row['航班号']).strip()
+                
+                # 航班号为空时报错
+                if not flight_no:
+                    row_errors.append('航班号不能为空，请填写航班号')
                 
                 # 检查文件内总包号重复
                 if receptacle_no and receptacle_no in seen_receptacle_nos:
@@ -2561,35 +2612,16 @@ def import_excel_mail_data():
                     mail_carrCode = ''
                     settle_code = ''
                     
-                    # 如果有航班号，从账单信息中查找对应信息
+                    # 如果有航班号，从账单信息中查找对应信息（仅精确匹配）
                     if flight_no:
-                        # 根据航班号查找账单信息
-                        bill_info_found = None
-                        
-                        # 尝试完整匹配
-                        for (dest, mail_type), bill_data in bill_info_cache.items():
-                            if bill_data[0] == flight_no:  # flight_no 匹配
-                                bill_info_found = bill_data
-                                mail_class = mail_type
-                                destination = dest
-                                break
-                        
-                        # 如果完整匹配失败，尝试部分匹配（处理组合航班号）
-                        if not bill_info_found and '-' in flight_no:
-                            # 将组合航班号拆分（如 ZK001HX741-SU275 拆分为 [ZK001HX741, SU275]）
-                            flight_parts = [part.strip() for part in flight_no.split('-')]
-                            for (dest, mail_type), bill_data in bill_info_cache.items():
-                                # 检查账单中的航班号是否包含在组合航班号中
-                                if bill_data[0] and any(bill_data[0] in part or part in bill_data[0] for part in flight_parts):
-                                    bill_info_found = bill_data
-                                    mail_class = mail_type
-                                    destination = dest
-                                    break
-                        
-                        if bill_info_found:
-                            mail_routeInfo = bill_info_found[1]   # route_info
-                            mail_quote = bill_info_found[2]       # quote
-                            mail_carrCode = bill_info_found[3]    # carry_code
+                        # 直接使用航班号精确匹配
+                        if flight_no in bill_info_cache:
+                            bill_info = bill_info_cache[flight_no]
+                            destination = bill_info['des']
+                            mail_class = bill_info['mail_class']
+                            mail_routeInfo = bill_info['route_info']
+                            mail_quote = bill_info['quote']
+                            mail_carrCode = bill_info['carry_code']
                             
                             # 查询邮件种类（使用缓存）
                             identifier1 = receptacle_no[13:15]  # 总包号第14-15位
@@ -2601,6 +2633,13 @@ def import_excel_mail_data():
                             # 如果没找到且identifier2不为空，尝试组合查询
                             if not settle_code and identifier2:
                                 settle_code = products_cache.get((identifier1, identifier2), '')
+                        else:
+                            # 航班号在bill_info中不存在，记录错误
+                            errors.append({
+                                'row': row_num, 
+                                'message': f'航班号“{flight_no}”在账单信息中不存在，请先在账单信息管理中配置该航班号'
+                            })
+                            continue  # 跳过该条数据
                     
                     # 计算重量（总包号后3位除以10）
                     weight = int(receptacle_no[-3:]) / 10 if receptacle_no else 0
