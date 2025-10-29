@@ -3348,49 +3348,39 @@ def regenerate_bill():
         if not mail_data_list:
             return jsonify({'success': False, 'message': f'{year}年{month}月没有找到邮件数据'})
         
-        # 获取所有bill_info数据，建立目的地和邮件类型到账单信息的映射
-        cursor.execute("SELECT mail_class, des, route_info, flight_no, quote, carry_code FROM bill_info")
+        # 获取所有bill_info数据，建立航班号到报价的映射
+        cursor.execute("SELECT flight_no, quote FROM bill_info")
         bill_info_data = cursor.fetchall()
         
-        # 创建(邮件类型, 目的地)到账单信息的映射字典
-        bill_info_map = {}
+        # 创建航班号到报价的映射字典
+        flight_quote_map = {}
         for bill in bill_info_data:
-            key = (bill['mail_class'], bill['des'])
-            bill_info_map[key] = {
-                'route_info': bill['route_info'],
-                'flight_no': bill['flight_no'],
-                'quote': bill['quote'],
-                'carry_code': bill['carry_code']
-            }
+            if bill['flight_no']:  # 确保航班号不为空
+                flight_quote_map[bill['flight_no']] = bill['quote']
         
-        # 更新mail_data中的数据
+        # 更新mail_data中的报价和费用（只根据航班号匹配）
         updated_count = 0
         for mail_record in mail_data_list:
-            mail_dest = mail_record['mail_dest']
-            mail_class = mail_record['Mail_class']  # 获取邮件类型
+            mail_flight_no = mail_record.get('mail_flightInfo')  # 获取邮件数据中的航班号
             
-            # 使用邮件类型和目的地作为匹配键
-            key = (mail_class, mail_dest)
-            if key in bill_info_map:
-                bill_info = bill_info_map[key]
+            # 使用航班号作为匹配键
+            if mail_flight_no and mail_flight_no in flight_quote_map:
+                new_quote = flight_quote_map[mail_flight_no]
                 
                 # 计算新的mail_charge（重量 * 费率）
                 mail_weight = float(mail_record.get('mail_weight', 0)) if mail_record.get('mail_weight') else 0
-                new_quote = float(bill_info['quote']) if bill_info['quote'] else 0
-                new_charge = round(mail_weight * new_quote, 2) if mail_weight > 0 and new_quote > 0 else 0
+                new_quote_float = float(new_quote) if new_quote else 0
+                new_charge = round(mail_weight * new_quote_float, 2) if mail_weight > 0 and new_quote_float > 0 else 0
                 
-                # 更新mail_data记录，包括mail_charge
+                # 只更新报价和费用，不更新航班号等其他字段
                 update_query = """
                     UPDATE mail_data 
-                    SET mail_routeInfo = %s, mail_flightInfo = %s, mail_quote = %s, mail_carrCode = %s, mail_charge = %s
+                    SET mail_quote = %s, mail_charge = %s
                     WHERE mail_id = %s
                 """
                 
                 cursor.execute(update_query, (
-                    bill_info['route_info'],
-                    bill_info['flight_no'],
-                    bill_info['quote'],
-                    bill_info['carry_code'],
+                    new_quote,
                     new_charge,
                     mail_record['mail_id']
                 ))
