@@ -16,4 +16,6 @@ jobs:
             cd /var/www/cnpost-bill
             git config --global --add safe.directory /var/www/cnpost-bill
             git pull origin main
-            echo "✅ 自动部署完成！"
+            # 重启Flask应用
+            sudo systemctl restart cnpost-bill || sudo supervisorctl restart cnpost-bill || pkill -f "python.*app.py" && nohup python3 app.py > /dev/null 2>&1 &
+            echo "✅ 自动部署完成并已重启应用！"
