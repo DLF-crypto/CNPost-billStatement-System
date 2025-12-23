@@ -1,0 +1,19 @@
+name: Deploy cnpost-bill to Server
+on:
+  push:
+    branches: [ main ]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd /var/www/cnpost-bill
+            git config --global --add safe.directory /var/www/cnpost-bill
+            git pull origin main
+            echo "✅ 自动部署完成！"
