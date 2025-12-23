@@ -1232,6 +1232,46 @@ def get_all_bill_info(page=1, per_page=15):
             connection.close()
     return {'data': [], 'total': 0, 'page': 1, 'per_page': per_page, 'total_pages': 0}
 
+def search_bill_info_by_destination(destination, page=1, per_page=15):
+    """根据目的地搜索账单信息"""
+    connection = get_db_connection()
+    if connection:
+        try:
+            cursor = connection.cursor(dictionary=True)
+            
+            # 计算偏移量
+            offset = (page - 1) * per_page
+            
+            # 获取符合条件的总记录数
+            cursor.execute("SELECT COUNT(*) as total FROM bill_info WHERE des LIKE %s", 
+                         (f"%{destination}%",))
+            total_count = cursor.fetchone()['total']
+            
+            # 获取分页数据
+            cursor.execute(
+                "SELECT * FROM bill_info WHERE des LIKE %s ORDER BY created_at DESC LIMIT %s OFFSET %s", 
+                (f"%{destination}%", per_page, offset)
+            )
+            bill_info = cursor.fetchall()
+            
+            # 计算总页数
+            total_pages = (total_count + per_page - 1) // per_page if total_count > 0 else 1
+            
+            return {
+                'data': bill_info,
+                'total': total_count,
+                'page': page,
+                'per_page': per_page,
+                'total_pages': total_pages
+            }
+        except Error as e:
+            print(f"搜索账单信息错误: {e}")
+            return {'data': [], 'total': 0, 'page': 1, 'per_page': per_page, 'total_pages': 0}
+        finally:
+            cursor.close()
+            connection.close()
+    return {'data': [], 'total': 0, 'page': 1, 'per_page': per_page, 'total_pages': 0}
+
 @app.route('/bill_info')
 def bill_info():
     """账单信息管理页面"""
@@ -1269,12 +1309,19 @@ def get_bill_info():
         # 获取分页参数
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 15, type=int)
+        # 获取搜索参数
+        destination = request.args.get('destination', '', type=str).strip().upper()
         
         # 限制每页最大数量
         if per_page > 100:
             per_page = 100
         
-        bill_info_result = get_all_bill_info(page, per_page)
+        # 如果有目的地搜索条件，使用搜索函数
+        if destination:
+            bill_info_result = search_bill_info_by_destination(destination, page, per_page)
+        else:
+            bill_info_result = get_all_bill_info(page, per_page)
+        
         return jsonify({'success': True, **bill_info_result})
     except Exception as e:
         return jsonify({'success': False, 'message': f'获取数据失败: {str(e)}'})

@@ -145,7 +145,13 @@
                                id="destination-search" 
                                placeholder="输入目的地代码（如：ZRH）" 
                                style="flex: 1; max-width: 300px; padding: 8px 12px; border: 1px solid #ced4da; border-radius: 4px; font-size: 14px;"
-                               oninput="filterByDestination(this.value)">
+                               onkeypress="if(event.key === 'Enter') searchByDestination()">
+                        <button type="button" 
+                                class="btn btn-primary" 
+                                onclick="searchByDestination()" 
+                                style="padding: 8px 16px; font-size: 14px;">
+                            <i class="fas fa-search"></i> 查询
+                        </button>
                         <button type="button" 
                                 class="btn btn-secondary" 
                                 onclick="clearSearch()" 
@@ -368,6 +374,7 @@
         let pageSize = 15;
         let totalPages = 1;
         let totalRecords = 0;
+        let currentDestination = ''; // 保存当前搜索的目的地
 
         // 页面加载时获取账单数据
         document.addEventListener('DOMContentLoaded', function() {
@@ -376,7 +383,12 @@
 
         // 加载账单数据
         function loadBillData(page = 1, perPage = 15) {
-            const url = `/get_bill_info?page=${page}&per_page=${perPage}`;
+            let url = `/get_bill_info?page=${page}&per_page=${perPage}`;
+            
+            // 如果有搜索条件，添加到URL
+            if (currentDestination) {
+                url += `&destination=${encodeURIComponent(currentDestination)}`;
+            }
             
             fetch(url)
                 .then(response => response.json())
@@ -919,38 +931,19 @@
             return isMailClassValid && isDesValid && isQuoteValid && isRouteInfoValid && isFlightNoValid && isCarryCodeValid;
         }
 
-        // 目的地查询功能
-        function filterByDestination(searchValue) {
-            const searchTerm = searchValue.trim().toUpperCase();
-            const tableRows = document.querySelectorAll('.employee-table tbody tr');
-            
-            tableRows.forEach(row => {
-                const destinationCell = row.cells[3]; // 目的地列（第4列，索引为3）
-                if (destinationCell) {
-                    const destination = destinationCell.textContent.trim().toUpperCase();
-                    if (searchTerm === '' || destination.includes(searchTerm)) {
-                        row.style.display = '';
-                    } else {
-                        row.style.display = 'none';
-                    }
-                }
-            });
-            
-            // 更新显示的记录数
-            updateRecordCount();
+        // 目的地查询功能（后端查询）
+        function searchByDestination() {
+            const searchValue = document.getElementById('destination-search').value.trim().toUpperCase();
+            currentDestination = searchValue;
+            // 重置到第一页并加载数据
+            loadBillData(1, pageSize);
         }
         
         function clearSearch() {
             document.getElementById('destination-search').value = '';
-            filterByDestination('');
-        }
-        
-        function updateRecordCount() {
-            const visibleRows = document.querySelectorAll('.employee-table tbody tr[style=""], .employee-table tbody tr:not([style*="display: none"])');
-            const totalRows = document.querySelectorAll('.employee-table tbody tr');
-            
-            // 如果页面有记录计数显示元素，可以在这里更新
-            console.log(`显示 ${visibleRows.length} / ${totalRows.length} 条记录`);
+            currentDestination = '';
+            // 重置到第一页并加载所有数据
+            loadBillData(1, pageSize);
         }
 
         // 用户下拉菜单交互

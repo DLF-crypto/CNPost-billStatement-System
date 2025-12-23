@@ -123,7 +123,16 @@
                         <div class="search-row">
                             <div class="search-group">
                                 <label for="receptacleNoInput">总包号查询：</label>
-                                <input type="text" id="receptacleNoInput" placeholder="请输入总包号" class="search-input">
+                                <input type="text" 
+                                       id="receptacleNoInput" 
+                                       placeholder="请输入总包号" 
+                                       class="search-input">
+                                <button type="button" 
+                                        class="btn btn-sm btn-outline" 
+                                        onclick="showMultiReceptacleModal()" 
+                                        style="margin-left: 5px;">
+                                    <i class="fas fa-list"></i> 多总包号
+                                </button>
                             </div>
                             <div class="search-group">
                                 <label for="destInput">到达地查询：</label>
@@ -504,6 +513,32 @@
         </div>
     </div>
 
+    <!-- 多总包号输入模态框 -->
+    <div id="multiReceptacleModal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3><i class="fas fa-list"></i> 多总包号查询</h3>
+                <span class="close" onclick="closeMultiReceptacleModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="multiReceptacleInput">请输入总包号（每行一个）：</label>
+                    <textarea id="multiReceptacleInput" 
+                              rows="10" 
+                              placeholder="请输入总包号，每行一个\n例如：\nABCDEFGHIJKLMNO12345678901234\nXYZABCDEFGHIJKL98765432109876"
+                              style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; font-family: monospace; resize: vertical;"></textarea>
+                    <small style="color: #666; display: block; margin-top: 5px;">
+                        <i class="fas fa-info-circle"></i> 支持批量输入，每个总包号占一行
+                    </small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeMultiReceptacleModal()">取消</button>
+                <button type="button" class="btn btn-primary" onclick="confirmMultiReceptacle()">确定</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 修改密码模态框 -->
     <div id="changePasswordModal" class="modal">
         <div class="modal-content">
@@ -515,16 +550,16 @@
                 <form id="changePasswordForm">
                     <div class="form-group">
                         <label for="currentPassword">当前密码 <span class="required">*</span></label>
-                        <input type="password" id="currentPassword" name="current_password" required>
+                        <input type="password" id="currentPassword" name="current_password" autocomplete="current-password" required>
                     </div>
                     <div class="form-group">
                         <label for="newPassword">新密码 <span class="required">*</span></label>
-                        <input type="password" id="newPassword" name="new_password" required minlength="6">
+                        <input type="password" id="newPassword" name="new_password" autocomplete="new-password" required minlength="6">
                         <small class="form-text">密码长度至少6位</small>
                     </div>
                     <div class="form-group">
                         <label for="confirmPassword">确认新密码 <span class="required">*</span></label>
-                        <input type="password" id="confirmPassword" name="confirm_password" required minlength="6">
+                        <input type="password" id="confirmPassword" name="confirm_password" autocomplete="new-password" required minlength="6">
                     </div>
                 </form>
             </div>
@@ -542,8 +577,7 @@
         let pageSize = 1000;
         let totalRecords = 0;
         let searchKeyword = '';
-
-        // 搜索功能已移至文件前部
+        let multiReceptacleNos = []; // 存储多个总包号
 
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', function() {
@@ -551,7 +585,6 @@
                 // 检查菜单状态
                 checkMenuState();
                 // 加载邮件数据
-                console.log('页面加载完成，开始加载邮件数据');
                 loadMailData();
                 // 设置总包号实时验证
                 setupReceptacleNoValidation();
@@ -574,7 +607,6 @@
 
         // 加载邮件数据
         function loadMailData(page = 1) {
-            console.log('loadMailData called with page:', page);
             currentPage = page;
             
             const params = new URLSearchParams({
@@ -586,35 +618,25 @@
                 params.append('search', searchKeyword);
             }
             
-            console.log('Fetching URL:', `/api/mail_data?${params}`);
             fetch(`/api/mail_data?${params}`)
-                .then(response => {
-                    console.log('Response status:', response.status);
-                    return response.json();
-                })
+                .then(response => response.json())
                 .then(data => {
-                    console.log('API response:', data);
                     if (data.success) {
-                        console.log('Data received, count:', data.data ? data.data.length : 0);
                         updateMailDataDisplay(data.data);
                         updateMailDataPagination(data);
                     } else {
-                        console.log('API error:', data.message);
                         // 如果是未登录错误，重定向到登录页面
                         if (data.message && data.message.includes('登录')) {
-                            console.log('Redirecting to login');
                             window.location.href = '/login';
                             return;
                         }
                         showMessage('获取邮件数据失败: ' + data.message, 'error');
-                        // 显示空数据状态
                         updateMailDataDisplay([]);
                     }
                 })
                 .catch(error => {
                     console.error('Error:', error);
                     showMessage('网络错误，请稍后重试', 'error');
-                    // 显示空数据状态
                     updateMailDataDisplay([]);
                 });
         }
@@ -738,7 +760,19 @@
         // 搜索功能
         function searchMailData() {
             // 获取所有搜索条件
-            const receptacleNos = document.getElementById('receptacleNoInput').value.trim();
+            let receptacleNos = '';
+            if (multiReceptacleNos.length > 0) {
+                // 如果有多总包号，使用多总包号
+                receptacleNos = multiReceptacleNos.join(',');
+            } else {
+                // 否则获取输入框的值，但要排除红色提示文字
+                const inputValue = document.getElementById('receptacleNoInput').value.trim();
+                // 只有当输入框不是提示文字时，才使用其值
+                if (inputValue && !inputValue.startsWith('存在多条查询数据')) {
+                    receptacleNos = inputValue;
+                }
+            }
+            
             const dests = document.getElementById('destInput').value.trim();
             const timeType = document.getElementById('timeTypeSelect').value;
             const startDate = document.getElementById('startDate').value;
@@ -756,20 +790,108 @@
             }
             if (hasFlightNo) searchParams.has_flight_no = hasFlightNo;
             
-            // 将搜索参数转换为字符串存储
-            searchKeyword = JSON.stringify(searchParams);
+            // 只有当有搜索条件时，才设置searchKeyword
+            if (Object.keys(searchParams).length > 0) {
+                searchKeyword = JSON.stringify(searchParams);
+            } else {
+                searchKeyword = ''; // 没有搜索条件时清空
+            }
+            
             loadMailData(1);
         }
 
         function clearSearch() {
-            document.getElementById('receptacleNoInput').value = '';
+            const receptacleInput = document.getElementById('receptacleNoInput');
+            receptacleInput.value = '';
+            receptacleInput.style.color = ''; // 重置颜色
             document.getElementById('destInput').value = '';
             document.getElementById('timeTypeSelect').value = '';
             document.getElementById('startDate').value = '';
             document.getElementById('endDate').value = '';
             document.getElementById('hasFlightNoSelect').value = '';
             searchKeyword = '';
+            multiReceptacleNos = []; // 清空多总包号
             loadMailData(1);
+        }
+        
+        // 显示多总包号输入模态框
+        function showMultiReceptacleModal() {
+            const modal = document.getElementById('multiReceptacleModal');
+            const textarea = document.getElementById('multiReceptacleInput');
+            
+            if (!modal) {
+                alert('错误：找不到模态框元素，请刷新页面后重试。');
+                return;
+            }
+            
+            // 如果之前有输入，显示之前的内容
+            if (multiReceptacleNos.length > 0) {
+                textarea.value = multiReceptacleNos.join('\n');
+            } else {
+                textarea.value = '';
+            }
+            
+            modal.style.display = 'block';
+        }
+
+        // 关闭多总包号输入模态框
+        function closeMultiReceptacleModal() {
+            document.getElementById('multiReceptacleModal').style.display = 'none';
+        }
+
+        // 确认多总包号输入
+        function confirmMultiReceptacle() {
+            const textarea = document.getElementById('multiReceptacleInput');
+            const input = textarea.value.trim();
+            
+            if (!input) {
+                // 如果没有输入，清空
+                multiReceptacleNos = [];
+                document.getElementById('receptacleNoInput').value = '';
+                document.getElementById('receptacleNoInput').style.color = '';
+                closeMultiReceptacleModal();
+                return;
+            }
+            
+            // 按换行符分割并过滤空行
+            const lines = input.split('\n')
+                .map(line => line.trim())
+                .filter(line => line.length > 0);
+            
+            if (lines.length === 0) {
+                alert('请输入至少一个总包号');
+                return;
+            }
+            
+            // 验证总包号格式（可选）
+            const invalidLines = [];
+            lines.forEach((line, index) => {
+                // 简单验证：29位字符
+                if (line.length !== 29) {
+                    invalidLines.push(`第${index + 1}行: ${line} (长度不是29位)`);
+                }
+            });
+            
+            if (invalidLines.length > 0) {
+                const confirmMsg = '以下总包号格式可能不正确：\n' + invalidLines.join('\n') + '\n\n是否继续？';
+                if (!confirm(confirmMsg)) {
+                    return;
+                }
+            }
+            
+            // 保存总包号
+            multiReceptacleNos = lines;
+            
+            // 在输入框中显示红色提示
+            const inputBox = document.getElementById('receptacleNoInput');
+            inputBox.value = `存在多条查询数据 (${multiReceptacleNos.length}个总包号)`;
+            inputBox.style.color = 'red';
+            
+            // 关闭模态框
+            closeMultiReceptacleModal();
+            
+            // 提示用户点击搜索
+            alert(`已输入 ${multiReceptacleNos.length} 个总包号，请点击“搜索”按钮进行查询`);
         }
         
 
