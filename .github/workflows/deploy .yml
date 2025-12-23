@@ -16,6 +16,8 @@ jobs:
             cd /var/www/cnpost-bill
             git config --global --add safe.directory /var/www/cnpost-bill
             git pull origin main
-            # 重启Flask应用
-            sudo systemctl restart cnpost-bill || sudo supervisorctl restart cnpost-bill || pkill -f "python.*app.py" && nohup python3 app.py > /dev/null 2>&1 &
+            # 重启gunicorn应用
+            pkill -9 -f "gunicorn.*app:app"
+            source venv/bin/activate
+            gunicorn --bind 0.0.0.0:5000 --daemon --workers 4 app:app
             echo "✅ 自动部署完成并已重启应用！"
