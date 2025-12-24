@@ -16,19 +16,5 @@ jobs:
             cd /var/www/cnpost-bill
             git config --global --add safe.directory /var/www/cnpost-bill
             git pull origin main
-            # 重启gunicorn应用
-            echo "正在停止旧进程..."
-            # 使用pgrep获取PID后再kill，避免误杀SSH会话
-            pgrep -f "gunicorn.*app:app" | xargs -r kill -9 || true
-            sleep 3
-            echo "正在启动新进程..."
-            cd /var/www/cnpost-bill
-            source venv/bin/activate
-            gunicorn --bind 0.0.0.0:5000 --daemon --workers 4 app:app
-            sleep 5
-            if pgrep -f "gunicorn.*app:app" > /dev/null; then
-              echo "✅ 自动部署完成并已重启应用！"
-            else
-              echo "⚠️ 警告：gunicorn可能未启动，请手动检查"
-              # 不再使用 exit 1，避免中断部署
-            fi
+            # 暂时禁用自动重启，避免SSH会话被杀
+            echo "✅ 代码已更新，请手动重启gunicorn"
