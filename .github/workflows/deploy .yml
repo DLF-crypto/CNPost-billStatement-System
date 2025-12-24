@@ -16,5 +16,13 @@ jobs:
             cd /var/www/cnpost-bill
             git config --global --add safe.directory /var/www/cnpost-bill
             git pull origin main
-            # 暂时禁用自动重启，避免SSH会话被杀
-            echo "✅ 代码已更新，请手动重启gunicorn"
+            # 使用systemd重启gunicorn服务
+            echo "正在重启gunicorn服务..."
+            sudo systemctl restart cnpost-bill
+            sleep 3
+            if sudo systemctl is-active --quiet cnpost-bill; then
+              echo "✅ 自动部署完成并已重启应用！"
+            else
+              echo "❌ 警告：服务启动失败，查看日志：sudo journalctl -u cnpost-bill -n 50"
+              exit 1
+            fi
