@@ -605,20 +605,33 @@
             }
         }
 
-        // 加载邮件数据
+        // 加载邮件数据（修改为POST请求，解决URL长度限制问题）
         function loadMailData(page = 1) {
             currentPage = page;
             
-            const params = new URLSearchParams({
+            // 构建请求体
+            const requestBody = {
                 page: page,
                 per_page: pageSize
-            });
+            };
             
+            // 如果有搜索条件，添加到请求体
             if (searchKeyword) {
-                params.append('search', searchKeyword);
+                try {
+                    requestBody.search_params = JSON.parse(searchKeyword);
+                } catch (e) {
+                    console.error('解析搜索参数失败:', e);
+                }
             }
             
-            fetch(`/api/mail_data?${params}`)
+            // 使用POST请求发送数据
+            fetch('/api/search_mail_data', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            })
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
@@ -1919,11 +1932,23 @@
             }
         }
 
-        // Excel导出功能
+        // Excel导出功能（支持多总包号）
         async function exportToExcel() {
             try {
                 // 获取当前搜索条件（复用searchMailData的逻辑）
-                const receptacleNos = document.getElementById('receptacleNoInput').value.trim();
+                let receptacleNos = '';
+                if (multiReceptacleNos.length > 0) {
+                    // 如果有多总包号，使用多总包号
+                    receptacleNos = multiReceptacleNos.join(',');
+                } else {
+                    // 否则获取输入框的值，但要排除红色提示文字
+                    const inputValue = document.getElementById('receptacleNoInput').value.trim();
+                    // 只有当输入框不是提示文字时，才使用其值
+                    if (inputValue && !inputValue.startsWith('存在多条查询数据')) {
+                        receptacleNos = inputValue;
+                    }
+                }
+                
                 const dests = document.getElementById('destInput').value.trim();
                 const timeType = document.getElementById('timeTypeSelect').value;
                 const startDate = document.getElementById('startDate').value;

@@ -1784,6 +1784,137 @@ def get_mail_data():
         if 'connection' in locals() and connection:
             connection.close()
 
+# 新增：POST请求的邮件数据搜索接口（解决URL长度限制问题）
+@app.route('/api/search_mail_data', methods=['POST'])
+def search_mail_data():
+    if 'loggedin' not in session:
+        return jsonify({'success': False, 'message': '请先登录'})
+    
+    try:
+        data = request.get_json()
+        page = int(data.get('page', 1))
+        per_page = int(data.get('per_page', 15))
+        search_params = data.get('search_params', {})
+        
+        connection = get_db_connection()
+        if connection:
+            cursor = connection.cursor(dictionary=True)
+            
+            # 计算偏移量
+            offset = (page - 1) * per_page
+            
+            # 构建查询条件
+            where_conditions = []
+            query_params = []
+            
+            # 总包号查询
+            if 'receptacle_nos' in search_params and search_params['receptacle_nos']:
+                receptacle_list = [no.strip() for no in search_params['receptacle_nos'].split(',') if no.strip()]
+                if receptacle_list:
+                    placeholders = ','.join(['%s'] * len(receptacle_list))
+                    where_conditions.append(f"mail_receptacleNo IN ({placeholders})")
+                    query_params.extend(receptacle_list)
+            
+            # 到达地查询
+            if 'destinations' in search_params and search_params['destinations']:
+                dest_list = [dest.strip() for dest in search_params['destinations'].split(',') if dest.strip()]
+                if dest_list:
+                    dest_conditions = []
+                    for dest in dest_list:
+                        dest_conditions.append("mail_dest LIKE %s")
+                        query_params.append(f"%{dest}%")
+                    where_conditions.append(f"({' OR '.join(dest_conditions)})")
+            
+            # 时间范围查询
+            if 'time_type' in search_params and 'start_date' in search_params:
+                time_type = search_params['time_type']
+                start_date = search_params['start_date'].replace('-', '')
+                
+                if time_type in ['recTime', 'upliftTime', 'arriveTime', 'deliverTime']:
+                    time_field = f"mail_{time_type}"
+                    where_conditions.append(f"{time_field} >= %s")
+                    query_params.append(start_date)
+                    
+                    if 'end_date' in search_params and search_params['end_date']:
+                        end_date = search_params['end_date'].replace('-', '')
+                        where_conditions.append(f"{time_field} <= %s")
+                        query_params.append(end_date)
+            
+            # 航班号筛选（是否有航班号）
+            if 'has_flight_no' in search_params:
+                has_flight_no = search_params['has_flight_no']
+                if has_flight_no == 'yes':
+                    where_conditions.append("mail_flightInfo IS NOT NULL AND mail_flightInfo != ''")
+                elif has_flight_no == 'no':
+                    where_conditions.append("(mail_flightInfo IS NULL OR mail_flightInfo = '')")
+            
+            # 构建WHERE子句
+            where_clause = ""
+            if where_conditions:
+                where_clause = "WHERE " + " AND ".join(where_conditions)
+            
+            # 如果没有搜索条件，只显示最新的1000条记录
+            if not where_conditions:
+                # 获取最新1000条记录的总数（最如1000）
+                count_query = "SELECT COUNT(*) as total FROM (SELECT mail_id FROM mail_data ORDER BY created_at DESC LIMIT 1000) as recent_data"
+                cursor.execute(count_query)
+                total_count = cursor.fetchone()['total']
+                
+                # 获取最新1000条记录的分页数据
+                data_query = """
+                    SELECT * FROM (
+                        SELECT mail_id, mail_receptacleNo, mail_originPost, mail_destPost, 
+                               mail_dest, mail_recTime, mail_upliftTime, mail_arriveTime, 
+                               mail_deliverTime, mail_routeInfo, mail_flightInfo, mail_weight, 
+                               mail_quote, mail_charge, mail_carrCode, Mail_class, mail_settle_code, created_at
+                        FROM mail_data 
+                        ORDER BY created_at DESC 
+                        LIMIT 1000
+                    ) as recent_data
+                    LIMIT %s OFFSET %s
+                """
+                cursor.execute(data_query, [per_page, offset])
+            else:
+                # 有搜索条件时，查询所有匹配的记录
+                count_query = f"SELECT COUNT(*) as total FROM mail_data {where_clause}"
+                cursor.execute(count_query, query_params)
+                total_count = cursor.fetchone()['total']
+                
+                # 获取搜索结果的分页数据
+                data_query = f"""
+                    SELECT mail_id, mail_receptacleNo, mail_originPost, mail_destPost, 
+                           mail_dest, mail_recTime, mail_upliftTime, mail_arriveTime, 
+                           mail_deliverTime, mail_routeInfo, mail_flightInfo, mail_weight, 
+                           mail_quote, mail_charge, mail_carrCode, Mail_class, mail_settle_code, created_at
+                    FROM mail_data {where_clause}
+                    ORDER BY created_at DESC 
+                    LIMIT %s OFFSET %s
+                """
+                cursor.execute(data_query, query_params + [per_page, offset])
+            mail_data = cursor.fetchall()
+            
+            # 计算总页数
+            total_pages = (total_count + per_page - 1) // per_page
+            
+            return jsonify({
+                'success': True,
+                'data': mail_data,
+                'total': total_count,
+                'page': page,
+                'per_page': per_page,
+                'total_pages': total_pages
+            })
+        else:
+            return jsonify({'success': False, 'message': '数据库连接失败'})
+            
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'获取数据失败: {str(e)}'})
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if 'connection' in locals() and connection:
+            connection.close()
+
 # 添加邮件数据API
 # 验证邮件类型格式（与账单信息管理相同）
 def validate_mail_class_for_mail_data(mail_class):
