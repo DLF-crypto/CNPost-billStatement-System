@@ -192,9 +192,6 @@
                     <button class="btn btn-danger" onclick="deleteSelectedRows()" style="background-color: #dc3545; border-color: #dc3545;">
                         <i class="fas fa-trash"></i> 删除选中
                     </button>
-                    <button class="btn btn-danger" onclick="clearAllMailData()" style="background-color: #e74c3c; border-color: #e74c3c;">
-                        <i class="fas fa-trash-alt"></i> 清空所有数据
-                    </button>
                     <button class="btn btn-info" onclick="exportToExcel()" style="background-color: #17a2b8; border-color: #17a2b8;">
                         <i class="fas fa-file-export"></i> Excel导出
                     </button>
@@ -1894,43 +1891,7 @@
             }
         }
 
-        // 清空所有邮件数据
-        async function clearAllMailData() {
-            // 二次确认
-            const firstConfirm = confirm('警告：此操作将清空所有邮件数据！\n\n此操作不可撤销，是否继续？');
-            if (!firstConfirm) {
-                return;
-            }
-            
-            const secondConfirm = confirm('再次确认：您真的要清空所有邮件数据吗？\n\n这将删除数据库中的所有邮件记录！');
-            if (!secondConfirm) {
-                return;
-            }
-            
-            try {
-                showMessage('正在清空数据，请稍候...', 'info');
-                
-                const response = await fetch('/api/clear_all_mail_data', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    showMessage(result.message, 'success');
-                    // 重新加载数据
-                    loadMailData(1);
-                } else {
-                    showMessage('清空失败: ' + result.message, 'error');
-                }
-            } catch (error) {
-                console.error('清空数据时发生错误:', error);
-                showMessage('清空失败: 网络错误', 'error');
-            }
-        }
+        // 清空所有邮件数据功能已移除
 
         // Excel导出功能（支持多总包号）
         async function exportToExcel() {
