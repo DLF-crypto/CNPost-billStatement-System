@@ -146,18 +146,20 @@
                                placeholder="输入目的地代码（如：ZRH）" 
                                style="flex: 1; max-width: 300px; padding: 8px 12px; border: 1px solid #ced4da; border-radius: 4px; font-size: 14px;"
                                onkeypress="if(event.key === 'Enter') searchByDestination()">
-                        <button type="button" 
-                                class="btn btn-primary" 
-                                onclick="searchByDestination()" 
-                                style="padding: 8px 16px; font-size: 14px;">
-                            <i class="fas fa-search"></i> 查询
-                        </button>
-                        <button type="button" 
-                                class="btn btn-secondary" 
-                                onclick="clearSearch()" 
-                                style="padding: 8px 16px; font-size: 14px;">
-                            <i class="fas fa-times"></i> 清空
-                        </button>
+                        <div style="display: flex; gap: 10px;">
+                            <button type="button" 
+                                    class="btn btn-primary" 
+                                    onclick="searchByDestination()" 
+                                    style="padding: 8px 16px; font-size: 14px;">
+                                <i class="fas fa-search"></i> 查询
+                            </button>
+                            <button type="button" 
+                                    class="btn btn-secondary" 
+                                    onclick="clearSearch()" 
+                                    style="padding: 8px 16px; font-size: 14px;">
+                                <i class="fas fa-times"></i> 清空
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -221,10 +223,10 @@
                         <div class="page-size-selector">
                             <label for="pageSizeSelect">每页显示：</label>
                             <select id="pageSizeSelect" onchange="changePageSize()">
-                                <option value="15" selected>15条</option>
+                                <option value="15">15条</option>
                                 <option value="30">30条</option>
                                 <option value="50">50条</option>
-                                <option value="100">100条</option>
+                                <option value="100" selected>100条</option>
                             </select>
                         </div>
                     </div>
@@ -371,14 +373,14 @@
     <script>
         // 分页相关全局变量
         let currentPage = 1;
-        let pageSize = 15;
+        let pageSize = 100;
         let totalPages = 1;
         let totalRecords = 0;
         let currentDestination = ''; // 保存当前搜索的目的地
 
         // 页面加载时获取账单数据
         document.addEventListener('DOMContentLoaded', function() {
-            loadBillData(1, 15);
+            loadBillData(1, 100);
         });
 
         // 加载账单数据
@@ -1021,5 +1023,6 @@
         // 编辑弹窗不支持点击外部关闭，只能通过按钮关闭
     </script>
 </body>
-</html> 
+</html>
+ 
  
