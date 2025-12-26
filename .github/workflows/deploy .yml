@@ -15,7 +15,24 @@ jobs:
           script: |
             cd /var/www/cnpost-bill
             git config --global --add safe.directory /var/www/cnpost-bill
-            git pull origin main
+            
+            # git pull 重试机制（3次）
+            echo "正在拉取最新代码..."
+            for i in 1 2 3; do
+              if git pull origin main; then
+                echo "✅ 代码更新成功！"
+                break
+              else
+                if [ $i -lt 3 ]; then
+                  echo "⚠️ 第$i次拉取失败，5秒后重试..."
+                  sleep 5
+                else
+                  echo "❌ git pull 失败，部署中止！"
+                  exit 1
+                fi
+              fi
+            done
+            
             # 使用systemd重启gunicorn服务
             echo "正在重启gunicorn服务..."
             sudo systemctl restart cnpost-bill
