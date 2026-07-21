@@ -976,5 +976,39 @@
             alert('修改密码功能待实现');
         }
     </script>
+    
+    <!-- ??????? -->
+    <div id="changePasswordModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-key"></i> ????</h3>
+                <span class="close" onclick="closeModal('changePasswordModal')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="changePasswordForm">
+                    <div class="form-group">
+                        <label for="currentPassword">???? <span class="required">*</span></label>
+                        <input type="password" id="currentPassword" name="current_password" required placeholder="???????">
+                    </div>
+                    <div class="form-group">
+                        <label for="newPassword">??? <span class="required">*</span></label>
+                        <input type="password" id="newPassword" name="new_password" required placeholder="?????????6??">
+                    </div>
+                    <div class="form-group">
+                        <label for="confirmPassword">????? <span class="required">*</span></label>
+                        <input type="password" id="confirmPassword" name="confirm_password" required placeholder="????????">
+                    </div>
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i>
+                        ??????6???????????
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('changePasswordModal')">??</button>
+                <button type="button" class="btn btn-primary" onclick="changePassword()">????</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

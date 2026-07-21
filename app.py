@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, send_file, make_response
+﻿from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, send_file, make_response
 import mysql.connector
 from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import datetime, timedelta
@@ -158,10 +158,10 @@ def validate_bill_data(data, connection, exclude_id=None):
 
 # MySQL数据库配置
 DB_CONFIG = {
-    'host': 'localhost',
-    'database': 'cnpost_bill_system',
-    'user': 'root',
-    'password': '123456',  # 请替换为您的root密码
+    'host': os.getenv('DB_HOST', 'localhost'),
+    'database': os.getenv('DB_NAME', 'cnpost_bill_system'),
+    'user': os.getenv('DB_USER', 'root'),
+    'password': os.getenv('DB_PASSWORD', ''),
     'charset': 'utf8mb4',
     'use_unicode': True,
     'autocommit': False  # 手动控制事务
@@ -529,6 +529,8 @@ def add_employee():
     if 'loggedin' not in session:
         return jsonify({'success': False, 'message': '请先登录'})
     
+    connection = None
+    cursor = None
     try:
         data = request.get_json()
         employee_id = generate_employee_id()
@@ -583,6 +585,8 @@ def update_employee():
     if 'loggedin' not in session:
         return jsonify({'success': False, 'message': '请先登录'})
     
+    connection = None
+    cursor = None
     try:
         data = request.get_json()
         employee_id = data['employee_id']
@@ -638,6 +642,8 @@ def delete_employee():
     if 'loggedin' not in session:
         return jsonify({'success': False, 'message': '请先登录'})
     
+    connection = None
+    cursor = None
     try:
         data = request.get_json()
         employee_id = data['employee_id']
@@ -668,6 +674,8 @@ def add_role():
     if 'loggedin' not in session:
         return jsonify({'success': False, 'message': '请先登录'})
     
+    connection = None
+    cursor = None
     try:
         data = request.get_json()
         role_name = data['role_name'].strip()
@@ -702,6 +710,8 @@ def update_role():
     if 'loggedin' not in session:
         return jsonify({'success': False, 'message': '请先登录'})
     
+    connection = None
+    cursor = None
     try:
         data = request.get_json()
         role_id = data['role_id']
@@ -737,6 +747,8 @@ def delete_role():
     if 'loggedin' not in session:
         return jsonify({'success': False, 'message': '请先登录'})
     
+    connection = None
+    cursor = None
     try:
         data = request.get_json()
         role_id = data['role_id']
@@ -769,6 +781,8 @@ def add_product():
     if 'loggedin' not in session:
         return jsonify({'success': False, 'message': '请先登录'})
     
+    connection = None
+    cursor = None
     try:
         product_identifier1 = request.form.get('product_identifier1')
         product_identifier2 = request.form.get('product_identifier2')
@@ -834,6 +848,8 @@ def update_product(product_id):
     if 'loggedin' not in session:
         return jsonify({'success': False, 'message': '请先登录'})
     
+    connection = None
+    cursor = None
     try:
         product_identifier1 = request.form.get('product_identifier1')
         product_identifier2 = request.form.get('product_identifier2')
@@ -871,6 +887,8 @@ def delete_product(product_id):
     if 'loggedin' not in session:
         return jsonify({'success': False, 'message': '请先登录'})
     
+    connection = None
+    cursor = None
     try:
         connection = get_db_connection()
         if connection:
@@ -1107,6 +1125,8 @@ def reset_password():
     if 'loggedin' not in session:
         return jsonify({'success': False, 'message': '请先登录'})
     
+    connection = None
+    cursor = None
     try:
         data = request.get_json()
         employee_id = data['employee_id']
@@ -1137,6 +1157,8 @@ def change_password():
     if 'loggedin' not in session:
         return jsonify({'success': False, 'message': '请先登录'})
     
+    connection = None
+    cursor = None
     try:
         data = request.get_json()
         current_password = data['current_password']
@@ -1365,6 +1387,8 @@ def add_bill_info():
         return jsonify({'success': False, 'message': '数据库连接失败'})
     
     cursor = None
+    connection = None
+    cursor = None
     try:
         data = request.get_json() or request.form.to_dict()
         print(f"Received data: {data}")  # 调试日志
@@ -1427,6 +1451,8 @@ def update_bill_info(bill_id):
     if not connection:
         return jsonify({'success': False, 'message': '数据库连接失败'})
     
+    connection = None
+    cursor = None
     try:
         data = request.get_json() or request.form.to_dict()
         
@@ -1492,6 +1518,8 @@ def delete_bill_info(bill_id):
     if not connection:
         return jsonify({'success': False, 'message': '数据库连接失败'})
     
+    connection = None
+    cursor = None
     try:
         cursor = connection.cursor()
         
