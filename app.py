@@ -1387,8 +1387,6 @@ def add_bill_info():
         return jsonify({'success': False, 'message': '数据库连接失败'})
     
     cursor = None
-    connection = None
-    cursor = None
     try:
         data = request.get_json() or request.form.to_dict()
         print(f"Received data: {data}")  # 调试日志
@@ -1451,7 +1449,6 @@ def update_bill_info(bill_id):
     if not connection:
         return jsonify({'success': False, 'message': '数据库连接失败'})
     
-    connection = None
     cursor = None
     try:
         data = request.get_json() or request.form.to_dict()
@@ -1518,7 +1515,6 @@ def delete_bill_info(bill_id):
     if not connection:
         return jsonify({'success': False, 'message': '数据库连接失败'})
     
-    connection = None
     cursor = None
     try:
         cursor = connection.cursor()
