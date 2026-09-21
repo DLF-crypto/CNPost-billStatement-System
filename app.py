@@ -2835,6 +2835,15 @@ def import_excel_mail_data():
                             # 如果没找到且identifier2不为空，尝试组合查询
                             if not settle_code and identifier2:
                                 settle_code = products_cache.get((identifier1, identifier2), '')
+
+                            # 产品信息中未配置邮件种类时直接报错，避免账单中出现邮件种类为空的数据
+                            if not settle_code:
+                                errors.append({
+                                    'row': row_num,
+                                    'message': f'总包号“{receptacle_no}”未匹配到邮件种类（标识符 {identifier1}/{identifier2 or "-"}），'
+                                               f'请先在“产品信息管理”中配置对应的产品结算代码'
+                                })
+                                continue  # 跳过该条数据
                         else:
                             # 航班号在bill_info中不存在，记录错误
                             errors.append({
@@ -3336,6 +3345,7 @@ def generate_cn51_bill(data, filepath, mail_type):
     # 创建数据透视表结构
     pivot_data = defaultdict(lambda: {
         'weight_sum': 0,
+        'charge_sum': 0,
         'quote': 0,
         'mail_settle_code': '',
         'mail_originPost': '',
@@ -3363,6 +3373,10 @@ def generate_cn51_bill(data, filepath, mail_type):
         # 累加重量（保留1位小数避免浮点数精度问题）
         weight = float(row.get('mail_weight', 0)) if row.get('mail_weight') else 0
         pivot_data[key]['weight_sum'] = round(pivot_data[key]['weight_sum'] + weight, 1)
+
+        # 累加明细金额（与CN66账单口径一致，保证两张账单总额完全相同）
+        charge = float(row.get('mail_charge', 0)) if row.get('mail_charge') else 0
+        pivot_data[key]['charge_sum'] = round(pivot_data[key]['charge_sum'] + charge, 2)
         
         # 保存其他字段信息
         pivot_data[key]['mail_settle_code'] = row.get('mail_settle_code', '')
@@ -3380,8 +3394,8 @@ def generate_cn51_bill(data, filepath, mail_type):
         writer.writerow(headers)
         
         for key, summary in pivot_data.items():
-            # 计算金额 = 来账重量 * 费率
-            amount = summary['weight_sum'] * summary['quote']
+            # 计算金额 = 该分组明细金额之和（与CN66逐条金额合计保持一致）
+            amount = summary['charge_sum']
             
             csv_row = [
                  'CP001',  # 供应商代码（固定值）
@@ -3559,13 +3573,39 @@ def regenerate_bill():
         for bill in bill_info_data:
             if bill['flight_no']:  # 确保航班号不为空
                 flight_quote_map[bill['flight_no']] = bill['quote']
+
+        # 获取产品信息，建立"标识符→邮件种类"映射，用于修复邮件种类为空的历史数据
+        cursor.execute("SELECT product_identifier1, product_identifier2, product_settle_code FROM products")
+        products_cache = {}
+        for product in cursor.fetchall():
+            product_identifier1 = product['product_identifier1']
+            product_identifier2 = product['product_identifier2']
+            if not product_identifier2:
+                products_cache[(product_identifier1, None)] = product['product_settle_code']
+            else:
+                products_cache[(product_identifier1, product_identifier2)] = product['product_settle_code']
         
-        # 更新mail_data中的报价和费用（只根据航班号匹配）
+        # 更新mail_data中的报价、费用和邮件种类
         updated_count = 0
         for mail_record in mail_data_list:
             mail_flight_no = mail_record.get('mail_flightInfo')  # 获取邮件数据中的航班号
-            
-            # 使用航班号作为匹配键
+
+            # 重新计算邮件种类（根据总包号与产品配置），修复历史数据中邮件种类为空的情况
+            new_settle_code = mail_record.get('mail_settle_code') or ''
+            receptacle_no = mail_record.get('mail_receptacleNo') or ''
+            if receptacle_no:
+                identifier1 = receptacle_no[13:15]  # 总包号第14-15位
+                identifier2 = receptacle_no[5:6]    # 总包号第6位
+                looked_up_settle_code = products_cache.get((identifier1, None), '')
+                if not looked_up_settle_code and identifier2:
+                    looked_up_settle_code = products_cache.get((identifier1, identifier2), '')
+                if looked_up_settle_code:
+                    new_settle_code = looked_up_settle_code
+
+            new_quote = mail_record.get('mail_quote')
+            new_charge = mail_record.get('mail_charge')
+
+            # 使用航班号作为匹配键，重新匹配最新报价并重算费用
             if mail_flight_no and mail_flight_no in flight_quote_map:
                 new_quote = flight_quote_map[mail_flight_no]
                 
@@ -3573,20 +3613,21 @@ def regenerate_bill():
                 mail_weight = float(mail_record.get('mail_weight', 0)) if mail_record.get('mail_weight') else 0
                 new_quote_float = float(new_quote) if new_quote else 0
                 new_charge = round(mail_weight * new_quote_float, 2) if mail_weight > 0 and new_quote_float > 0 else 0
-                
-                # 只更新报价和费用，不更新航班号等其他字段
-                update_query = """
-                    UPDATE mail_data 
-                    SET mail_quote = %s, mail_charge = %s
-                    WHERE mail_id = %s
-                """
-                
-                cursor.execute(update_query, (
-                    new_quote,
-                    new_charge,
-                    mail_record['mail_id']
-                ))
-                updated_count += 1
+
+            # 更新报价、费用和邮件种类（不更新航班号等其他字段）
+            update_query = """
+                UPDATE mail_data 
+                SET mail_quote = %s, mail_charge = %s, mail_settle_code = %s
+                WHERE mail_id = %s
+            """
+
+            cursor.execute(update_query, (
+                new_quote,
+                new_charge,
+                new_settle_code,
+                mail_record['mail_id']
+            ))
+            updated_count += 1
         
         # 提交数据库更新
         connection.commit()
